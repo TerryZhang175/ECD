@@ -109,6 +109,9 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
     if cfg.FRAG_MIN_CHARGE <= 0 or cfg.FRAG_MAX_CHARGE <= 0 or cfg.FRAG_MIN_CHARGE > cfg.FRAG_MAX_CHARGE:
         raise ValueError("Set FRAG_MIN_CHARGE/FRAG_MAX_CHARGE to a valid positive range.")
 
+    # Get current mode from config
+    current_mode = str(cfg.PLOT_MODE).lower()
+
     if bool(cfg.ENABLE_FRAGMENT_INTENSITY_CAP):
         tol_ppm = float(cfg.MATCH_TOL_PPM) if cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM is None else float(
             cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM
@@ -121,6 +124,7 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
             spectrum[:, 0],
             spectrum[:, 1],
             tol_ppm=float(tol_ppm),
+            mode=current_mode,
             mz_min=mz_min_cap,
             mz_max=mz_max_cap,
         )
@@ -149,15 +153,27 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
 
     matches: list[dict] = []
     n = len(residues)
+    
+    # Import get_interchain_fragment_composition for complex_fragments mode
+    from personalized_sequence import get_interchain_fragment_composition
+    
     for ion_type in cfg.ION_TYPES:
         series = ion_series(ion_type)
         allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_1H))
         allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_2H))
         for frag_len in range(1, n):
-            frag_name, frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+            # Get appropriate composition based on mode
+            if current_mode == "complex_fragments":
+                # Use interchain fragment composition
+                frag_name, target_comp = get_interchain_fragment_composition(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+            else:
+                # Use regular fragment composition
+                frag_name, target_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+            
             def evaluate_candidate(loss_suffix: str, loss_comp, z: int):
                 try:
-                    dist0 = theoretical_isodist_from_comp(loss_comp, z)
+                    # Use target_comp for complex_fragments mode
+                    dist0 = theoretical_isodist_from_comp(target_comp, z)
                 except ValueError:
                     return None
                 if dist0.size == 0:
@@ -369,7 +385,7 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 }
 
             for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
-                neutral_match = evaluate_candidate("", frag_comp, z)
+                neutral_match = evaluate_candidate("", target_comp, z)
                 
                 # 判据 A: 如果根本没找到匹配 (evaluate_candidate 返回 None)，直接跳过后续 Loss
                 if neutral_match is None:
@@ -385,7 +401,7 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 matches.append(neutral_match)
                 
                 # 只有当中性匹配通过最终输出筛选时才进入此循环
-                for loss_suffix, loss_comp in neutral_loss_variants(frag_comp, ion_series_letter=series):
+                for loss_suffix, loss_comp in neutral_loss_variants(target_comp, ion_series_letter=series):
                     if not loss_suffix:
                         continue
                     loss_match = evaluate_candidate(loss_suffix, loss_comp, z)

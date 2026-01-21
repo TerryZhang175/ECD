@@ -18,13 +18,14 @@ except Exception:
     isodec_make_shifted_peak = None
 
 
-filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_10-11ECD_Rep2\RE65.txt"
+filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_10-11ECD_Rep2\RE0.txt"
 
 # What to generate/plot:
 # - "precursor": intact species isotope envelope (previous behavior)
 # - "fragments": peptide backbone fragments (b/y/c/z for ECD-style MS/MS)
+# - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
-PLOT_MODE = "fragments"
+PLOT_MODE = "complex_fragments"
 SCAN = 1
 
 # Optional: focus on an m/z region of interest.
@@ -52,9 +53,12 @@ DISULFIDE_MAP = [(2, 7)]
 # DISULFIDE_MAP = [("A2", "B2"), ("A7", "B7")]
 # Example (amidated disulfide-linked dimer): COPIES=2, AMIDATED=True, DISULFIDE_BONDS=2
 
+# Internal disulfides per monomer
+INTERNAL_DISULFIDES_PER_MONOMER = DISULFIDE_BONDS // COPIES
+
 ION_TYPES = ("b", "y", "c", "z-dot")  # For ECD you may want ("b","y","c","z-dot") depending on your annotation
 FRAG_MIN_CHARGE = 1
-FRAG_MAX_CHARGE = 3
+FRAG_MAX_CHARGE = 6
 MATCH_TOL_PPM = 20
 MIN_OBS_REL_INT = 0.02
 MAX_PLOTTED_FRAGMENTS = 40
@@ -86,8 +90,8 @@ NEUTRAL_LOSS_MAX_CO2 = 1  # 0, 1 allowed
 # 3) Let cap = max of those observed intensities.
 # 4) Remove all peaks with intensity > cap (reduces dynamic-range domination by precursor/charge-reduced peaks).
 ENABLE_FRAGMENT_INTENSITY_CAP = True
-FRAGMENT_INTENSITY_CAP_MZ_MIN = 300.0
-FRAGMENT_INTENSITY_CAP_MZ_MAX = 1000.0
+FRAGMENT_INTENSITY_CAP_MZ_MIN = 0.0
+FRAGMENT_INTENSITY_CAP_MZ_MAX = 8000.0
 FRAGMENT_INTENSITY_CAP_TOL_PPM = None  # if None, uses MATCH_TOL_PPM
 FRAGMENT_INTENSITY_CAP_MIN_HITS = 25  # require at least this many non-zero windows to activate
 FRAGMENT_INTENSITY_CAP_VERBOSE = False

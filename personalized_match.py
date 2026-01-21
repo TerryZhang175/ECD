@@ -82,6 +82,7 @@ def compute_fragment_intensity_cap(
     spectrum_mz: np.ndarray,
     spectrum_int: np.ndarray,
     tol_ppm: float,
+    mode: str = "fragments",
     mz_min: Optional[float] = None,
     mz_max: Optional[float] = None,
 ) -> tuple[float, int]:
@@ -90,6 +91,10 @@ def compute_fragment_intensity_cap(
     n = len(residues)
     mz_min_f = None if mz_min is None else float(mz_min)
     mz_max_f = None if mz_max is None else float(mz_max)
+
+    # Get monomer neutral composition (for complex mode)
+    from personalized_sequence import get_neutral_monomer_composition
+    monomer_comp = get_neutral_monomer_composition(residues)
 
     for ion_type in cfg.ION_TYPES:
         series = ion_series(ion_type)
@@ -119,10 +124,13 @@ def compute_fragment_intensity_cap(
                 else:
                     variant_comp = frag_comp
 
-                for _, loss_comp in neutral_loss_variants(variant_comp, ion_series_letter=series):
+                if mode == "complex_fragments":
+                    # For complex_fragments mode, only consider complex fragments (monomer + fragment) without neutral losses
+                    target_comp = variant_comp + monomer_comp
+                    # Process this target_comp once
                     for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
                         try:
-                            dist0 = theoretical_isodist_from_comp(loss_comp, z)
+                            dist0 = theoretical_isodist_from_comp(target_comp, z)
                         except Exception:
                             continue
                         if dist0.size == 0:
@@ -151,6 +159,41 @@ def compute_fragment_intensity_cap(
                                 hits += 1
                                 if m > cap:
                                     cap = m
+                else:
+                    # For regular fragments mode, consider neutral losses
+                    for _, loss_comp in neutral_loss_variants(variant_comp, ion_series_letter=series):
+                        target_comp = loss_comp
+                        for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
+                            try:
+                                dist0 = theoretical_isodist_from_comp(target_comp, z)
+                            except Exception:
+                                continue
+                            if dist0.size == 0:
+                                continue
+
+                            anchor = float(dist0[np.argmax(dist0[:, 1]), 0])
+                            if allow_1h or allow_2h:
+                                shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
+                                shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
+                                shifts = [0.0]
+                                if allow_1h:
+                                    shifts.extend([shift_1, -shift_1])
+                                if allow_2h:
+                                    shifts.extend([shift_2, -shift_2])
+                            else:
+                                shifts = [0.0]
+
+                            for s in shifts:
+                                mz0 = anchor + float(s)
+                                if mz_min_f is not None and mz0 < mz_min_f:
+                                    continue
+                                if mz_max_f is not None and mz0 > mz_max_f:
+                                    continue
+                                m = max_intensity_in_ppm_window(spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm))
+                                if m > 0.0:
+                                    hits += 1
+                                    if m > cap:
+                                        cap = m
 
     return float(cap), int(hits)
 

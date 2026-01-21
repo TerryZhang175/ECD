@@ -192,6 +192,55 @@ def apply_neutral_loss(comp: ms.Composition, formula: str, count: int) -> ms.Com
     return comp - (loss_comp * int(count))
 
 
+def get_neutral_monomer_composition(residues):
+    """
+    Calculate the complete composition of a single neutral monomer,
+    considering internal disulfide bonds and amidation.
+    """
+    # Base amino acid sequence + H2O
+    comp = residue_range_composition(residues, 0, len(residues)) + ms.Composition("H2O")
+    # Consider amidation (per copy)
+    if cfg.AMIDATED:
+        comp += ms.Composition(cfg.AMIDATION_FORMULA)
+    # Consider internal disulfide bonds (each bond loses 2 H)
+    internal_bonds = cfg.DISULFIDE_BONDS // cfg.COPIES
+    comp -= ms.Composition(H=2 * internal_bonds)
+    return comp
+
+
+def get_interchain_fragment_composition(
+    residues: list[tuple[str, list[str]]],
+    ion_type: str,
+    frag_len: int,
+    amidated: bool,
+) -> tuple[str, ms.Composition]:
+    """
+    Calculate the composition of an interchain fragment (monomer + fragment).
+    
+    Args:
+        residues: List of residue tuples
+        ion_type: Type of ion (e.g., 'c', 'z-dot', 'b')
+        frag_len: Length of the fragment
+        amidated: Whether the peptide is amidated
+        
+    Returns:
+        Tuple of (fragment name, fragment composition)
+    """
+    # Get fragment composition
+    frag_name, frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=amidated)
+    
+    # Get neutral monomer composition
+    monomer_comp = get_neutral_monomer_composition(residues)
+    
+    # Calculate interchain fragment composition
+    total_comp = frag_comp + monomer_comp
+    
+    # For z-dot ions, no additional adjustment needed as ion_composition_from_sequence
+    # already handles the radical character through ms.std_ion_comp['z-dot']
+    
+    return frag_name, total_comp
+
+
 def get_disulfide_logic(ion_type: str, frag_len: int, peptide_len: int):
     """
     Determine disulfide bond status for a fragment and return mass shifts.
