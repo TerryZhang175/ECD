@@ -105,6 +105,139 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> None:
     )
 
 
+def run_precursor_series_mode(residues, spectrum, isodec_config) -> None:
+    # 1. 计算母离子的基础组成 (与原 run_precursor_mode 一致)
+    base_comp = residue_range_composition(residues, 0, len(residues)) + ms.Composition("H2O")
+    if cfg.AMIDATED:
+        base_comp += ms.Composition(cfg.AMIDATION_FORMULA)
+
+    comp = base_comp * int(cfg.COPIES)
+    comp += ms.Composition("H-2") * int(cfg.DISULFIDE_BONDS)
+    
+    results = []
+    overlays = []
+    # 定义颜色循环用于绘图
+    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:brown"]
+
+    # 2. 遍历从原始电荷到最小电荷的所有电荷态
+    start_z = int(cfg.CHARGE)
+    end_z = int(cfg.PRECURSOR_SERIES_MIN_CHARGE)
+    
+    print(f"Running precursor_series mode from z={start_z} down to z={end_z}...")
+
+    # 计算实验数据的最大强度，用于统一缩放理论峰
+    max_exp_int = float(np.max(spectrum[:, 1]))
+
+    for i, z in enumerate(range(start_z, end_z - 1, -1)):
+        try:
+            dist = theoretical_isodist_from_comp(comp, z)
+        except Exception as e:
+            print(f"  z={z}: Failed to generate theory: {e}")
+            continue
+
+        if dist.size == 0:
+            print(f"  z={z}: Theoretical distribution is empty.")
+            continue
+
+        # 对齐到数据
+        peak_theory_mz = float(dist[np.argmax(dist[:, 1]), 0])
+        peak_obs_mz = None
+        if cfg.ALIGN_TO_DATA:
+            spectrum_mz = spectrum[:, 0]
+            spectrum_int = spectrum[:, 1]
+            in_win = (spectrum_mz >= peak_theory_mz - cfg.ALIGN_WINDOW_MZ) & (
+                spectrum_mz <= peak_theory_mz + cfg.ALIGN_WINDOW_MZ
+            )
+            if np.any(in_win):
+                window = spectrum[in_win]
+                best_score = -1.0
+                best_shift = 0.0
+                best_peak = None
+                for obs_mz in window[:, 0]:
+                    shift = float(obs_mz) - peak_theory_mz
+                    shifted_mz = dist[:, 0] + shift
+                    y_obs = observed_intensities_isodec(
+                        spectrum_mz,
+                        spectrum_int,
+                        shifted_mz,
+                        z=int(z),
+                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        peak_mz=float(obs_mz),
+                    )
+                    score = css_similarity(y_obs, dist[:, 1])
+                    if score > best_score:
+                        best_score = score
+                        best_shift = shift
+                        best_peak = float(obs_mz)
+                if best_peak is not None:
+                    peak_obs_mz = best_peak
+                    dist[:, 0] += best_shift
+
+        # 缩放强度，确保理论峰中最强的峰与实验峰中的高度一致
+        # 1. 找到理论分布中的最强峰
+        max_theory_idx = int(np.argmax(dist[:, 1]))
+        max_theory_mz = float(dist[max_theory_idx, 0])
+        max_theory_int = float(dist[max_theory_idx, 1])
+        
+        # 2. 在实验数据中找到与理论最强峰对应的实验峰
+        # 首先在理论最强峰附近搜索
+        spectrum_mz = spectrum[:, 0]
+        spectrum_int = spectrum[:, 1]
+        
+        # 定义搜索窗口
+        search_window = float(cfg.ALIGN_WINDOW_MZ) if cfg.ALIGN_WINDOW_MZ is not None else 0.5
+        in_window = (spectrum_mz >= max_theory_mz - search_window) & (spectrum_mz <= max_theory_mz + search_window)
+        
+        target_intensity = None
+        if np.any(in_window):
+            # 在窗口内找到最接近的实验峰
+            window_mz = spectrum_mz[in_window]
+            window_int = spectrum_int[in_window]
+            closest_idx = int(np.argmin(np.abs(window_mz - max_theory_mz)))
+            target_intensity = float(window_int[closest_idx])
+        
+        # 如果没有找到匹配的实验峰，使用实验数据的最大强度
+        if target_intensity is None:
+            target_intensity = max_exp_int
+        
+        # 3. 计算缩放因子并应用，确保理论最强峰与实验峰高度一致
+        if max_theory_int > 0:
+            scale = target_intensity / max_theory_int
+            dist[:, 1] *= scale
+
+        # 应用 m/z 窗口过滤
+        if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
+            mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
+            mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
+            dist = dist[(dist[:, 0] >= mz_min) & (dist[:, 0] <= mz_max)]
+            if dist.size == 0:
+                print(f"  z={z}: Theoretical distribution is empty inside the selected m/z window.")
+                continue
+
+        # 匹配观察峰
+        matches = match_theory_peaks(
+            spectrum[:, 0], spectrum[:, 1], dist[:, 0],
+            tol_ppm=float(cfg.MATCH_TOL_PPM), theory_int=dist[:, 1]
+        )
+        
+        # 计算得分 (CSS)
+        obs_intensities = np.array([m["obs_int"] if m["within"] else 0.0 for m in matches])
+        score = css_similarity(obs_intensities, dist[:, 1])
+        
+        print(f"  z={z}: CSS Score = {score:.4f}")
+        
+        # Always add to overlays regardless of CSS threshold
+        results.append({"z": z, "score": score, "matches": matches})
+        color = colors[i % len(colors)]
+        overlays.append((dist, color, f"Precursor z={z}"))
+
+    # 3. 绘图与结果展示
+    if overlays:
+        plot_overlay(spectrum, overlays, mz_min=cfg.MZ_MIN, mz_max=cfg.MZ_MAX)
+    else:
+        print("No precursor series members passed the CSS threshold.")
+
+
 def run_fragments_mode(residues, spectrum, isodec_config) -> None:
     if cfg.FRAG_MIN_CHARGE <= 0 or cfg.FRAG_MAX_CHARGE <= 0 or cfg.FRAG_MIN_CHARGE > cfg.FRAG_MAX_CHARGE:
         raise ValueError("Set FRAG_MIN_CHARGE/FRAG_MAX_CHARGE to a valid positive range.")

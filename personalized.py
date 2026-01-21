@@ -4,7 +4,7 @@ import numpy as np
 from unidec.UniDecImporter import ImporterFactory
 
 import personalized_config as cfg
-from personalized_modes import run_diagnose_mode, run_fragments_mode, run_precursor_mode
+from personalized_modes import run_diagnose_mode, run_fragments_mode, run_precursor_mode, run_precursor_series_mode
 from personalized_sequence import parse_custom_sequence
 
 
@@ -53,12 +53,14 @@ def main() -> None:
     mode = str(cfg.PLOT_MODE).lower()
     if mode == "precursor":
         run_precursor_mode(residues, spectrum, isodec_config)
+    elif mode == "precursor_series":
+        run_precursor_series_mode(residues, spectrum, isodec_config)
     elif mode == "fragments" or mode == "complex_fragments":
         run_fragments_mode(residues, spectrum, isodec_config)
     elif mode == "diagnose":
         run_diagnose_mode(residues, spectrum, isodec_config)
     else:
-        raise ValueError('PLOT_MODE must be "precursor", "fragments", "complex_fragments", or "diagnose".')
+        raise ValueError('PLOT_MODE must be "precursor", "precursor_series", "fragments", "complex_fragments", or "diagnose".')
 
 
 if __name__ == "__main__":

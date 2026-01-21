@@ -25,7 +25,8 @@ filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_1
 # - "fragments": peptide backbone fragments (b/y/c/z for ECD-style MS/MS)
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
-PLOT_MODE = "complex_fragments"
+# - "precursor_series": 识别母离子及其所有电荷还原态 (Charge Reduced Species)
+PLOT_MODE = "precursor_series"
 SCAN = 1
 
 # Optional: focus on an m/z region of interest.
@@ -139,6 +140,9 @@ AMIDATION_FORMULA = "H1N1O-1"
 ALIGN_TO_DATA = True
 ALIGN_WINDOW_MZ = 1.0
 REL_INTENSITY_CUTOFF = 0.01
+
+# 电荷还原搜索的最小电荷态，通常设为 1
+PRECURSOR_SERIES_MIN_CHARGE = 1
 
 
 def require_isodec_rules() -> None:
