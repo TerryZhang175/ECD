@@ -15,6 +15,7 @@ from personalized_sequence import (
     neutral_loss_columns,
     neutral_loss_label,
     neutral_loss_variants,
+    get_disulfide_logic,
 )
 from personalized_theory import css_similarity, theoretical_isodist_from_comp, observed_intensities_isodec
 
@@ -101,38 +102,55 @@ def compute_fragment_intensity_cap(
             except Exception:
                 continue
 
-            for _, loss_comp in neutral_loss_variants(frag_comp, ion_series_letter=series):
-                for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
+            # Get disulfide variants
+            cys_variants = get_disulfide_logic(ion_type, frag_len, len(residues))
+            
+            # If no disulfide variants, use the original composition
+            if not cys_variants:
+                cys_variants = [("", None)]
+
+            for variant_suffix, shift_comp in cys_variants:
+                # Apply disulfide shift if present
+                if shift_comp:
                     try:
-                        dist0 = theoretical_isodist_from_comp(loss_comp, z)
+                        variant_comp = frag_comp + shift_comp
                     except Exception:
                         continue
-                    if dist0.size == 0:
-                        continue
+                else:
+                    variant_comp = frag_comp
 
-                    anchor = float(dist0[np.argmax(dist0[:, 1]), 0])
-                    if allow_1h or allow_2h:
-                        shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
-                        shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
-                        shifts = [0.0]
-                        if allow_1h:
-                            shifts.extend([shift_1, -shift_1])
-                        if allow_2h:
-                            shifts.extend([shift_2, -shift_2])
-                    else:
-                        shifts = [0.0]
+                for _, loss_comp in neutral_loss_variants(variant_comp, ion_series_letter=series):
+                    for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
+                        try:
+                            dist0 = theoretical_isodist_from_comp(loss_comp, z)
+                        except Exception:
+                            continue
+                        if dist0.size == 0:
+                            continue
 
-                    for s in shifts:
-                        mz0 = anchor + float(s)
-                        if mz_min_f is not None and mz0 < mz_min_f:
-                            continue
-                        if mz_max_f is not None and mz0 > mz_max_f:
-                            continue
-                        m = max_intensity_in_ppm_window(spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm))
-                        if m > 0.0:
-                            hits += 1
-                            if m > cap:
-                                cap = m
+                        anchor = float(dist0[np.argmax(dist0[:, 1]), 0])
+                        if allow_1h or allow_2h:
+                            shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
+                            shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
+                            shifts = [0.0]
+                            if allow_1h:
+                                shifts.extend([shift_1, -shift_1])
+                            if allow_2h:
+                                shifts.extend([shift_2, -shift_2])
+                        else:
+                            shifts = [0.0]
+
+                        for s in shifts:
+                            mz0 = anchor + float(s)
+                            if mz_min_f is not None and mz0 < mz_min_f:
+                                continue
+                            if mz_max_f is not None and mz0 > mz_max_f:
+                                continue
+                            m = max_intensity_in_ppm_window(spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm))
+                            if m > 0.0:
+                                hits += 1
+                                if m > cap:
+                                    cap = m
 
     return float(cap), int(hits)
 
@@ -363,33 +381,371 @@ def diagnose_candidate(
         "diagnostic_steps": [],
     }
 
-    frag_name, frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
-    result["frag_name"] = frag_name
-    result["diagnostic_steps"].append({"step": "1. Ion composition", "status": "pass", "details": f"Generated {frag_name}"})
+    # Get base ion composition
+    frag_name, base_frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+    
+    # Get disulfide variants
+    cys_variants = get_disulfide_logic(ion_type, frag_len, len(residues))
+    
+    # If no disulfide variants, use the original composition
+    if not cys_variants:
+        cys_variants = [("", None)]
+    
+    # Process each disulfide variant
+    best_result = None
+    best_score = -1
+    
+    for variant_suffix, shift_comp in cys_variants:
+        # Create a copy of the result dictionary for this variant
+        variant_result = result.copy()
+        variant_result["diagnostic_steps"] = []
+        
+        # Apply disulfide shift if present
+        if shift_comp:
+            try:
+                frag_comp = base_frag_comp + shift_comp
+                variant_name = frag_name + variant_suffix
+                variant_result["frag_name"] = variant_name
+                variant_result["diagnostic_steps"].append({"step": "1. Ion composition", "status": "pass", "details": f"Generated {variant_name} (with disulfide shift)"})
+            except Exception as e:
+                variant_result["reason"] = f"disulfide_shift_failed: {e}"
+                variant_result["diagnostic_steps"].append({"step": "1. Ion composition", "status": "fail", "details": str(e)})
+                continue
+        else:
+            frag_comp = base_frag_comp
+            variant_result["frag_name"] = frag_name
+            variant_result["diagnostic_steps"].append({"step": "1. Ion composition", "status": "pass", "details": f"Generated {frag_name}"})
 
-    try:
-        loss_comp = apply_neutral_loss(frag_comp, loss_formula, loss_count)
-        result["diagnostic_steps"].append({"step": "2. Neutral loss", "status": "pass", "details": f"Applied {loss_count}x{loss_formula}"})
-    except Exception as e:
-        result["reason"] = f"neutral_loss_failed: {e}"
-        result["diagnostic_steps"].append({"step": "2. Neutral loss", "status": "fail", "details": str(e)})
+        try:
+            loss_comp = apply_neutral_loss(frag_comp, loss_formula, loss_count)
+            variant_result["diagnostic_steps"].append({"step": "2. Neutral loss", "status": "pass", "details": f"Applied {loss_count}x{loss_formula}"})
+        except Exception as e:
+            variant_result["reason"] = f"neutral_loss_failed: {e}"
+            variant_result["diagnostic_steps"].append({"step": "2. Neutral loss", "status": "fail", "details": str(e)})
+            continue
+        
+        formula = getattr(loss_comp, "formula", None)
+        variant_result["formula"] = str(formula) if formula else str(loss_comp)
+        
+        try:
+            dist0 = theoretical_isodist_from_comp(loss_comp, z)
+            variant_result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "pass", "details": f"Generated {len(dist0)} peaks"})
+        except Exception as e:
+            variant_result["reason"] = f"theory_failed: {e}"
+            variant_result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "fail", "details": str(e)})
+            continue
+        
+        if dist0.size == 0:
+            variant_result["reason"] = "theory_empty"
+            variant_result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "fail", "details": "Empty theoretical spectrum"})
+            continue
+        
+        # Apply fragments mode's H-transfer mixture model
+        obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
+        series = ion_series(ion_type)
+        allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_1H))
+        allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_2H))
+        
+        # For backward compatibility, if user specifies a specific H-transfer, use it directly
+        # Import necessary functions from personalized_theory for H-transfer model
+        from personalized_theory import observed_intensities_isodec
+        
+        if h_transfer != 0:
+            variant_result["diagnostic_steps"].append({"step": "4. H-transfer mode", "status": "info", "details": f"Using specified H-transfer: {h_transfer:+d} H+"})
+            # Apply the specified H-transfer
+            hz = float(cfg.H_TRANSFER_MASS) / float(z)
+            dist = dist0.copy()
+            dist[:, 0] += float(h_transfer) * hz
+            
+            # Calculate observed intensities
+            peak_mz = float(dist[np.argmax(dist[:, 1]), 0])
+            y_obs = observed_intensities_isodec(
+                spectrum_mz,
+                spectrum_int,
+                dist[:, 0],
+                z=int(z),
+                match_tol_ppm=float(match_tol_ppm),
+                peak_mz=peak_mz,
+            )
+            
+            best_model = f"{h_transfer:+d}H"
+            best_score_variant = css_similarity(y_obs, dist[:, 1])
+            best_pred = dist[:, 1]
+            best_weights = {f"{h_transfer:+d}H": 1.0}
+        else:
+            # Use fragments mode's H-transfer mixture model
+            variant_result["diagnostic_steps"].append({"step": "4. H-transfer mixture model", "status": "info", "details": "Applying fragments mode mixture model"})
+            
+            shift_1 = float(cfg.H_TRANSFER_MASS) / float(z)
+            shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z)
+
+            dist_p1 = dist0.copy()
+            dist_p1[:, 0] += shift_1
+            dist_m1 = dist0.copy()
+            dist_m1[:, 0] -= shift_1
+
+            dist_p2 = None
+            dist_m2 = None
+            if allow_2h:
+                dist_p2 = dist0.copy()
+                dist_p2[:, 0] += shift_2
+                dist_m2 = dist0.copy()
+                dist_m2[:, 0] -= shift_2
+
+            dists_for_union = [dist0]
+            if allow_1h:
+                dists_for_union.extend([dist_p1, dist_m1])
+            if allow_2h:
+                dists_for_union.extend([dist_p2, dist_m2])
+
+            from personalized_theory import build_sample_axis, observed_intensities_isodec, vectorize_dist, css_similarity, fit_simplex_mixture
+            
+            sample_keys, sample_mzs, scale = build_sample_axis(
+                dists_for_union,
+                decimals=6,
+                mz_min=mz_min,
+                mz_max=mz_max,
+            )
+            
+            if len(sample_mzs) == 0:
+                variant_result["reason"] = "sample_axis_empty"
+                variant_result["diagnostic_steps"].append({"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"})
+                continue
+
+            peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+            y_obs = observed_intensities_isodec(
+                spectrum_mz,
+                spectrum_int,
+                sample_mzs,
+                z=int(z),
+                match_tol_ppm=float(match_tol_ppm),
+                peak_mz=peak_mz,
+            )
+            
+            y0 = vectorize_dist(dist0, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
+            neutral_score = css_similarity(y_obs, y0)
+            
+            best_model = "neutral"
+            best_score_variant = neutral_score
+            best_pred = y0
+            best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
+
+            if allow_1h or allow_2h:
+                yp1 = vectorize_dist(dist_p1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
+                ym1 = vectorize_dist(dist_m1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
+                yp2 = vectorize_dist(dist_p2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
+                ym2 = vectorize_dist(dist_m2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
+
+                comps_plus = [("0", y0)]
+                comps_minus = [("0", y0)]
+                if allow_1h:
+                    comps_plus.append(("+H", yp1))
+                    comps_minus.append(("-H", ym1))
+                if allow_2h:
+                    comps_plus.append(("+2H", yp2))
+                    comps_minus.append(("-2H", ym2))
+
+                names_plus, vecs_plus = zip(*comps_plus)
+                w_plus, y_plus, score_plus = fit_simplex_mixture(y_obs, list(vecs_plus))
+                weights_plus = dict(zip(names_plus, w_plus))
+
+                names_minus, vecs_minus = zip(*comps_minus)
+                w_minus, y_minus, score_minus = fit_simplex_mixture(y_obs, list(vecs_minus))
+                weights_minus = dict(zip(names_minus, w_minus))
+
+                if score_plus > best_score_variant:
+                    best_model = "+mix"
+                    best_score_variant = score_plus
+                    best_pred = y_plus
+                    best_weights = {
+                        "0": weights_plus.get("0", 0.0),
+                        "+H": weights_plus.get("+H", 0.0),
+                        "+2H": weights_plus.get("+2H", 0.0),
+                        "-H": 0.0,
+                        "-2H": 0.0,
+                    }
+
+                if score_minus > best_score_variant:
+                    best_model = "-mix"
+                    best_score_variant = score_minus
+                    best_pred = y_minus
+                    best_weights = {
+                        "0": weights_minus.get("0", 0.0),
+                        "+H": 0.0,
+                        "+2H": 0.0,
+                        "-H": weights_minus.get("-H", 0.0),
+                        "-2H": weights_minus.get("-2H", 0.0),
+                    }
+
+            rel_improve = (best_score_variant - neutral_score) / max(neutral_score, 1e-12)
+            if best_model != "neutral" and rel_improve < float(cfg.H_TRANSFER_MIN_REL_IMPROVEMENT):
+                best_model = "neutral"
+                best_score_variant = neutral_score
+                best_pred = y0
+                best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
+        
+        variant_result["diagnostic_steps"].append({"step": "4. H-transfer mixture model", "status": "pass", "details": f"Selected model: {best_model}, CSS: {best_score_variant:.4f}"})
+        
+        # Update h_transfer based on selected model
+        if best_model == "neutral":
+            variant_result["h_transfer"] = 0
+        elif best_model == "+mix":
+            # Select the highest weight H-transfer value from +mix model
+            if best_weights["+2H"] > best_weights["+H"]:
+                variant_result["h_transfer"] = 2
+            elif best_weights["+H"] > 0:
+                variant_result["h_transfer"] = 1
+            else:
+                variant_result["h_transfer"] = 0
+        elif best_model == "-mix":
+            # Select the highest weight H-transfer value from -mix model
+            if best_weights["-2H"] > best_weights["-H"]:
+                variant_result["h_transfer"] = -2
+            elif best_weights["-H"] > 0:
+                variant_result["h_transfer"] = -1
+            else:
+                variant_result["h_transfer"] = 0
+        
+        # Create dist_plot for anchor selection
+        dist_plot = np.column_stack([sample_mzs.copy(), best_pred.copy()]) if h_transfer == 0 else None
+    
+        variant_result["raw_cosine_preanchor"] = float(best_score_variant)
+    
+        # Calculate masses with best H-transfer
+        if h_transfer != 0:
+            mono_mass = float(loss_comp.mass()) + (float(h_transfer) * float(cfg.H_TRANSFER_MASS))
+            avg_mass = float(loss_comp.mass(average=True)) + (float(h_transfer) * float(cfg.H_TRANSFER_MASS))
+        else:
+            # For mixture model, use neutral mass as reference
+            mono_mass = float(loss_comp.mass())
+            avg_mass = float(loss_comp.mass(average=True))
+        
+        variant_result["mono_mass"] = mono_mass
+        variant_result["avg_mass"] = avg_mass
+    
+        # Anchor peak selection (same as fragments mode)
+        anchor_theory_mz = None
+        obs_idx = None
+        obs_mz = None
+        obs_int = None
+        anchor_hits = 0
+        
+        if h_transfer != 0:
+            # For specified H-transfer, use the simple approach
+            sorted_idx = np.argsort(dist[:, 1])[::-1][: int(cfg.ANCHOR_TOP_N)]
+            for idx in sorted_idx:
+                mz_candidate = float(dist[int(idx), 0])
+                obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+                obs_mz_c = float(spectrum_mz[obs_idx_c])
+                if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
+                    continue
+                obs_int_c = float(spectrum_int[obs_idx_c])
+                if float(min_obs_rel_int) > 0 and obs_int_c < obs_max * float(min_obs_rel_int):
+                    continue
+                anchor_hits += 1
+                if anchor_theory_mz is None:
+                    anchor_theory_mz = mz_candidate
+                    obs_idx = int(obs_idx_c)
+                    obs_mz = obs_mz_c
+                    obs_int = obs_int_c
+        else:
+            # For mixture model, use the neutral distribution for anchor selection
+            sorted_idx = np.argsort(dist0[:, 1])[::-1][: int(cfg.ANCHOR_TOP_N)]
+            for idx in sorted_idx:
+                mz_candidate = float(dist0[int(idx), 0])
+                obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+                obs_mz_c = float(spectrum_mz[obs_idx_c])
+                if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
+                    continue
+                obs_int_c = float(spectrum_int[obs_idx_c])
+                if float(min_obs_rel_int) > 0 and obs_int_c < obs_max * float(min_obs_rel_int):
+                    continue
+                anchor_hits += 1
+                if anchor_theory_mz is None:
+                    anchor_theory_mz = mz_candidate
+                    obs_idx = int(obs_idx_c)
+                    obs_mz = obs_mz_c
+                    obs_int = obs_int_c
+        
+        # Check if anchor selection was successful
+        if anchor_theory_mz is None:
+            variant_result["reason"] = "anchor_outside_ppm"
+            variant_result["diagnostic_steps"].append({"step": "5. Anchor selection", "status": "fail", "details": f"No anchor peak found within {match_tol_ppm} ppm and {min_obs_rel_int} relative intensity"})
+            # Continue to next variant
+            continue
+        
+        variant_result["anchor_theory_mz"] = float(anchor_theory_mz)
+        variant_result["obs_idx"] = int(obs_idx)
+        variant_result["obs_mz"] = float(obs_mz)
+        variant_result["obs_int"] = float(obs_int)
+        variant_result["anchor_hits"] = int(anchor_hits)
+        variant_result["diagnostic_steps"].append({"step": "5. Anchor selection", "status": "pass", "details": f"Found anchor peak at {obs_mz:.4f} (theory: {anchor_theory_mz:.4f})"})
+    
+        # Calculate ppm offset
+        ppm_offset = ((float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)) * 1e6
+        variant_result["ppm_offset"] = float(ppm_offset)
+        variant_result["diagnostic_steps"].append({"step": "6. PPM offset calculation", "status": "pass", "details": f"Calculated ppm offset: {ppm_offset:.2f}"})
+    
+        # Apply ppm offset to all theoretical peaks
+        if h_transfer != 0:
+            dist_calibrated = dist.copy()
+            dist_calibrated[:, 0] += (float(ppm_offset) / 1e6) * dist_calibrated[:, 0]
+        else:
+            dist_calibrated = dist0.copy()
+            dist_calibrated[:, 0] += (float(ppm_offset) / 1e6) * dist_calibrated[:, 0]
+        
+        # Calculate calibrated masses
+        variant_result["mono_mass_calibrated"] = float(loss_comp.mass()) + (float(ppm_offset) / 1e6) * float(loss_comp.mass())
+        variant_result["avg_mass_calibrated"] = float(loss_comp.mass(average=True)) + (float(ppm_offset) / 1e6) * float(loss_comp.mass(average=True))
+    
+        # Isotope deconvolution and final CSS score
+        if isodec_config:
+            from personalized_theory import observed_intensities_isodec
+            
+            # Use the calibrated distribution for isotope deconvolution
+            peak_mz_calibrated = float(dist_calibrated[np.argmax(dist_calibrated[:, 1]), 0])
+            y_obs_calibrated = observed_intensities_isodec(
+                spectrum_mz,
+                spectrum_int,
+                dist_calibrated[:, 0],
+                z=int(z),
+                match_tol_ppm=float(match_tol_ppm),
+                peak_mz=peak_mz_calibrated,
+            )
+            
+            # Calculate final CSS score with calibrated distribution
+            final_score = css_similarity(y_obs_calibrated, dist_calibrated[:, 1])
+            variant_result["final_cosine"] = float(final_score)
+            variant_result["diagnostic_steps"].append({"step": "7. Final CSS calculation", "status": "pass", "details": f"Calculated final CSS score: {final_score:.4f}"})
+        else:
+            # Use the pre-anchor score as the final score
+            final_score = best_score_variant
+            variant_result["final_cosine"] = float(final_score)
+            variant_result["diagnostic_steps"].append({"step": "7. Final CSS calculation", "status": "pass", "details": f"Using pre-anchor CSS score: {final_score:.4f}"})
+    
+        # Determine if the match is acceptable
+        if final_score >= float(cfg.MIN_COSINE):
+            variant_result["ok"] = True
+            variant_result["reason"] = "ok"
+            variant_result["diagnostic_steps"].append({"step": "8. Match acceptance", "status": "pass", "details": f"Match accepted with CSS score: {final_score:.4f}"})
+        else:
+            variant_result["ok"] = False
+            variant_result["reason"] = f"cosine_below_threshold: {final_score:.4f} < {cfg.MIN_COSINE}"
+            variant_result["diagnostic_steps"].append({"step": "8. Match acceptance", "status": "fail", "details": f"Match rejected: CSS score below threshold"})
+        
+        # Update best result if this variant is better
+        if final_score > best_score:
+            best_score = final_score
+            best_result = variant_result
+    
+    # If no variant was successful, return the original result with an error
+    if best_result is None:
+        result["reason"] = "all_disulfide_variants_failed"
+        result["diagnostic_steps"].append({"step": "1. Ion composition", "status": "fail", "details": "All disulfide variants failed"})
         return result
     
-    formula = getattr(loss_comp, "formula", None)
-    result["formula"] = str(formula) if formula else str(loss_comp)
-    
-    try:
-        dist0 = theoretical_isodist_from_comp(loss_comp, z)
-        result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "pass", "details": f"Generated {len(dist0)} peaks"})
-    except Exception as e:
-        result["reason"] = f"theory_failed: {e}"
-        result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "fail", "details": str(e)})
-        return result
-    
-    if dist0.size == 0:
-        result["reason"] = "theory_empty"
-        result["diagnostic_steps"].append({"step": "3. Theoretical spectrum", "status": "fail", "details": "Empty theoretical spectrum"})
-        return result
+    # Return the best result
+    return best_result
 
     # Apply fragments mode's H-transfer mixture model
     obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0

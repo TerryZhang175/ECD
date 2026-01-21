@@ -18,11 +18,12 @@ except Exception:
     isodec_make_shifted_peak = None
 
 
-filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\ZD_21to22Feb_2n5_WTECD\RE 22.txt"
+filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_10-11ECD_Rep2\RE65.txt"
 
 # What to generate/plot:
 # - "precursor": intact species isotope envelope (previous behavior)
 # - "fragments": peptide backbone fragments (b/y/c/z for ECD-style MS/MS)
+# - "diagnose": detailed diagnostics for a specific fragment ion
 PLOT_MODE = "fragments"
 SCAN = 1
 
@@ -39,11 +40,16 @@ MZ_MAX = None
 # - Phospho: "S[HPO3]" (equivalent to PO3H)
 # - Carbamidomethyl (IAA): "C[C2H3NO]"
 # Bracket contents are interpreted as an elemental formula (not a mass delta).
-PEPTIDE = "KCNTATCATQRLANFLVHSSNNFGAILSSTNVGSNTY"
+PEPTIDE = "KCNTATCATQRLANFLVHSGNNFGAILSSTNVGSNTY"
 CHARGE = 6  # integer charge state, e.g. 10
 COPIES = 2  # 1=monomer, 2=dimer (two copies of the same peptide)
 AMIDATED = True  # C-terminal amidation (adds HN, removes O; delta = H1N1O-1) per copy
 DISULFIDE_BONDS = 2  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
+# Define disulfide bond pairs (1-based indices)
+# Example: For KCNT... sequence, Cys at positions 2 and 7
+DISULFIDE_MAP = [(2, 7)]
+# For dimer inter-chain bonds, can define cross-chain mode (requires subsequent logic support)
+# DISULFIDE_MAP = [("A2", "B2"), ("A7", "B7")]
 # Example (amidated disulfide-linked dimer): COPIES=2, AMIDATED=True, DISULFIDE_BONDS=2
 
 ION_TYPES = ("b", "y", "c", "z-dot")  # For ECD you may want ("b","y","c","z-dot") depending on your annotation
@@ -55,6 +61,7 @@ MAX_PLOTTED_FRAGMENTS = 40
 LABEL_MATCHES = False
 ANCHOR_TOP_N = 3
 ANCHOR_MIN_MATCHES = 1
+MIN_COSINE = 0.70  # minimum cosine similarity threshold for match acceptance
 
 # Hydrogen-transfer handling (ExD/ECD-style). Uses H+ mass (not H atom mass).
 # Only enabled for c/z by default; accept transfer only if cosine similarity
@@ -90,10 +97,10 @@ FRAGMENT_INTENSITY_CAP_VERBOSE = False
 #   DIAGNOSE_ION_SPEC = "c7^2+"
 #   DIAGNOSE_ION_SPEC = "z12-2H2O^3+"
 #   DIAGNOSE_ION_SPEC = "z-dot12-CO"  # will scan charge range if no ^z+ suffix is present
-DIAGNOSE_ION_SPEC = "c3^1+"
+DIAGNOSE_ION_SPEC = "c15^1+"
 # Hydrogen transfer degree (H+). Use an integer in {-2,-1,0,1,2}.
 # Set to 0 to enable automatic selection using fragments mode's mixture model
-DIAGNOSE_H_TRANSFER = 1
+DIAGNOSE_H_TRANSFER = 0
 # If ion spec has no charge, scan FRAG_MIN_CHARGE..FRAG_MAX_CHARGE and report all.
 DIAGNOSE_SCAN_CHARGES = True
 DIAGNOSE_SHOW_PLOT = True

@@ -190,3 +190,46 @@ def apply_neutral_loss(comp: ms.Composition, formula: str, count: int) -> ms.Com
         raise ValueError(f"Unsupported neutral loss formula '{formula}'.")
     loss_comp = ms.Composition(formula)
     return comp - (loss_comp * int(count))
+
+
+def get_disulfide_logic(ion_type: str, frag_len: int, peptide_len: int):
+    """
+    Determine disulfide bond status for a fragment and return mass shifts.
+    
+    Args:
+        ion_type: The type of ion (e.g., 'c', 'z-dot', 'b')
+        frag_len: The length of the fragment
+        peptide_len: The total length of the peptide
+        
+    Returns:
+        List of tuples: [(suffix, Composition shift)]
+    """
+    # Determine fragment residue indices (1-based)
+    if ion_type.startswith(("a", "b", "c")):
+        indices = set(range(1, frag_len + 1))
+    else:  # x, y, z series
+        indices = set(range(peptide_len - frag_len + 1, peptide_len + 1))
+    
+    shifts = []  # Format: (description, Composition shift)
+
+    for c1, c2 in cfg.DISULFIDE_MAP:
+        # Handle cross-chain bonds if needed (future enhancement)
+        # For now, assume simple 1-based indices
+        in_c1 = c1 in indices
+        in_c2 = c2 in indices
+
+        # Case 1: Fragment contains both Cys residues of a disulfide bond (complete loop)
+        if in_c1 and in_c2:
+            # Default state: disulfide bond remains intact (oxidized), mass -2.0156 Da
+            shifts.append(("-OxidizedLoop", ms.Composition(H=-2)))
+        
+        # Case 2: Fragment contains only one of the Cys residues
+        elif in_c1 or in_c2:
+            # State A: ECD causes disulfide bond breakage to form thiol (reduced state)
+            shifts.append(("-Thiol", ms.Composition()))
+            # State B: ECD causes disulfide bond breakage to form thiyl radical (-1.0078 Da)
+            shifts.append(("-ThiylRadical", ms.Composition(H=-1)))
+            # State C: Persulfide variant (+31.972 Da)
+            shifts.append(("-Persulfide", ms.Composition(S=1)))
+            
+    return shifts
