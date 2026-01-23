@@ -57,6 +57,22 @@ def residue_range_composition(
     return comp
 
 
+def get_precursor_composition(residues: list[tuple[str, list[str]]]) -> ms.Composition:
+    """
+    Compute the full precursor composition with copies, amidation, and disulfides.
+    """
+    monomer_base = residue_range_composition(residues, 0, len(residues)) + ms.Composition("H2O")
+    complex_comp = monomer_base * int(cfg.COPIES)
+
+    if cfg.AMIDATED:
+        complex_comp += ms.Composition(cfg.AMIDATION_FORMULA) * int(cfg.COPIES)
+
+    if int(cfg.DISULFIDE_BONDS) > 0:
+        complex_comp -= ms.Composition(f"H{2 * int(cfg.DISULFIDE_BONDS)}")
+
+    return complex_comp
+
+
 def ion_composition_from_sequence(
     residues: list[tuple[str, list[str]]],
     ion_type: str,

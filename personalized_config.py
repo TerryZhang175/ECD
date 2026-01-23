@@ -21,12 +21,13 @@ except Exception:
 filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_10-11ECD_Rep2\RE0.txt"
 
 # What to generate/plot:
-# - "precursor": intact species isotope envelope (previous behavior)
+# - "precursor": precursor charge/state inspection and lock-mass calibration
+# - "charge_reduced": charge-reduced precursor search (ECD/ETD)
 # - "fragments": peptide backbone fragments (b/y/c/z for ECD-style MS/MS)
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
-# - "precursor_series": 识别母离子及其所有电荷还原态 (Charge Reduced Species)
-PLOT_MODE = "precursor_series"
+# - "raw": plot raw spectrum only (no preprocessing)
+PLOT_MODE = "charge_reduced"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 
 # Optional: focus on an m/z region of interest.
@@ -43,7 +44,6 @@ MZ_MAX = None
 # - Carbamidomethyl (IAA): "C[C2H3NO]"
 # Bracket contents are interpreted as an elemental formula (not a mass delta).
 PEPTIDE = "KCNTATCATQRLANFLVHSGNNFGAILSSTNVGSNTY"
-CHARGE = 6  # integer charge state, e.g. 10
 COPIES = 2  # 1=monomer, 2=dimer (two copies of the same peptide)
 AMIDATED = True  # C-terminal amidation (adds HN, removes O; delta = H1N1O-1) per copy
 DISULFIDE_BONDS = 2  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
@@ -61,7 +61,7 @@ ION_TYPES = ("b", "y", "c", "z-dot")  # For ECD you may want ("b","y","c","z-dot
 FRAG_MIN_CHARGE = 1
 FRAG_MAX_CHARGE = 6
 MATCH_TOL_PPM = 20
-MIN_OBS_REL_INT = 0.02
+MIN_OBS_REL_INT = 0.0
 MAX_PLOTTED_FRAGMENTS = 40
 LABEL_MATCHES = False
 ANCHOR_TOP_N = 3
@@ -85,24 +85,32 @@ NEUTRAL_LOSS_MAX_NH3 = 2  # 0, 1, 2 allowed
 NEUTRAL_LOSS_MAX_CO = 1   # 0, 1 allowed
 NEUTRAL_LOSS_MAX_CO2 = 1  # 0, 1 allowed
 
+# Hill-climb centroiding (peakdetect) for fragments mode.
+# Uses UniDec's peakdetect with a ppm window to re-centroid spectra.
+ENABLE_HILL_CENTROID = True
+HILL_CENTROID_WINDOW = 10
+HILL_CENTROID_THRESHOLD = 0.0
+HILL_CENTROID_PPM = None  # if None, uses MATCH_TOL_PPM
+HILL_CENTROID_NORM = True
+
 # Fragment-driven intensity cap stripping:
 # 1) Generate theoretical fragment ions (incl. neutral losses + H-transfer shifts).
 # 2) For each candidate, take the highest observed peak within MATCH_TOL_PPM of its anchor m/z.
 # 3) Let cap = max of those observed intensities.
 # 4) Remove all peaks with intensity > cap (reduces dynamic-range domination by precursor/charge-reduced peaks).
-ENABLE_FRAGMENT_INTENSITY_CAP = True
-FRAGMENT_INTENSITY_CAP_MZ_MIN = 0.0
-FRAGMENT_INTENSITY_CAP_MZ_MAX = 8000.0
+ENABLE_FRAGMENT_INTENSITY_CAP = False
+FRAGMENT_INTENSITY_CAP_MZ_MIN = 300.0
+FRAGMENT_INTENSITY_CAP_MZ_MAX = 2000.0
 FRAGMENT_INTENSITY_CAP_TOL_PPM = None  # if None, uses MATCH_TOL_PPM
-FRAGMENT_INTENSITY_CAP_MIN_HITS = 25  # require at least this many non-zero windows to activate
-FRAGMENT_INTENSITY_CAP_VERBOSE = False
+FRAGMENT_INTENSITY_CAP_MIN_HITS = 1  # require at least this many non-zero windows to activate
+FRAGMENT_INTENSITY_CAP_VERBOSE = True
 
 # Diagnostics: set these to inspect why an expected ion was not selected.
 # Examples:
 #   DIAGNOSE_ION_SPEC = "c7^2+"
 #   DIAGNOSE_ION_SPEC = "z12-2H2O^3+"
 #   DIAGNOSE_ION_SPEC = "z-dot12-CO"  # will scan charge range if no ^z+ suffix is present
-DIAGNOSE_ION_SPEC = "c15^1+"
+DIAGNOSE_ION_SPEC = "b4-2H2O^1+"
 # Hydrogen transfer degree (H+). Use an integer in {-2,-1,0,1,2}.
 # Set to 0 to enable automatic selection using fragments mode's mixture model
 DIAGNOSE_H_TRANSFER = 0
@@ -121,6 +129,11 @@ EXPORT_FRAGMENTS_CSV = True
 FRAGMENTS_CSV_SUMMARY_PATH = None
 FRAGMENTS_CSV_PEAKS_PATH = None
 
+# CSV export for charge-reduced precursor mode.
+CHARGE_REDUCED_EXPORT_CSV = True
+CHARGE_REDUCED_CSV_SUMMARY_PATH = None
+CHARGE_REDUCED_CSV_PEAKS_PATH = None
+
 # IsoDec-style false-positive suppression rules (preferred over ad-hoc gates).
 ENABLE_ISODEC_RULES = True
 ISODEC_MINPEAKS = 3
@@ -137,12 +150,18 @@ ADDUCT_MASS = 1.007276467  # proton mass for positive-mode m/z conversion
 MASS_DIFF_C = 1.0033  # ~C13-C12 mass difference (Da)
 AMIDATION_FORMULA = "H1N1O-1"
 
-ALIGN_TO_DATA = True
-ALIGN_WINDOW_MZ = 1.0
 REL_INTENSITY_CUTOFF = 0.01
 
-# 电荷还原搜索的最小电荷态，通常设为 1
-PRECURSOR_SERIES_MIN_CHARGE = 1
+# Precursor mode settings.
+PRECURSOR_MIN_CHARGE = 1
+PRECURSOR_MAX_CHARGE = 10
+PRECURSOR_SEARCH_ITERATIONS = 5
+ENABLE_LOCK_MASS = True
+PRECURSOR_CHAIN_TO_FRAGMENTS = True
+
+# Charge-reduced precursor settings.
+CR_MIN_CHARGE = 1
+CR_MAX_CHARGE = 10
 
 
 def require_isodec_rules() -> None:

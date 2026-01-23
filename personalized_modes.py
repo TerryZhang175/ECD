@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pyteomics.mass as ms
-
 import personalized_config as cfg
 from personalized_match import (
     compute_fragment_intensity_cap,
@@ -21,13 +19,17 @@ from personalized_match import (
 )
 from personalized_plot import plot_overlay
 from personalized_sequence import (
+    apply_neutral_loss,
+    get_precursor_composition,
+    get_disulfide_logic,
+    get_neutral_monomer_composition,
     ion_composition_from_sequence,
     ion_series,
     neutral_loss_columns,
     neutral_loss_label,
     neutral_loss_variants,
-    residue_range_composition,
 )
+from personalized_variants import variant_rank_key_from_result, variant_type_from_suffix
 from personalized_theory import (
     build_sample_axis,
     css_similarity,
@@ -38,204 +40,363 @@ from personalized_theory import (
 )
 
 
-def run_precursor_mode(residues, spectrum, isodec_config) -> None:
-    base_comp = residue_range_composition(residues, 0, len(residues)) + ms.Composition("H2O")
-    if cfg.AMIDATED:
-        base_comp += ms.Composition(cfg.AMIDATION_FORMULA)
-
-    comp = base_comp * int(cfg.COPIES)
-    comp += ms.Composition("H-2") * int(cfg.DISULFIDE_BONDS)
-
-    theory_plot = theoretical_isodist_from_comp(comp, cfg.CHARGE)
-    if theory_plot.size == 0:
-        raise ValueError("Theoretical distribution is empty after filtering; lower REL_INTENSITY_CUTOFF.")
-
-    peak_theory_mz = float(theory_plot[np.argmax(theory_plot[:, 1]), 0])
-    peak_obs_mz = None
-    if cfg.ALIGN_TO_DATA:
-        spectrum_mz = spectrum[:, 0]
-        spectrum_int = spectrum[:, 1]
-        in_win = (spectrum_mz >= peak_theory_mz - cfg.ALIGN_WINDOW_MZ) & (
-            spectrum_mz <= peak_theory_mz + cfg.ALIGN_WINDOW_MZ
-        )
-        if np.any(in_win):
-            window = spectrum[in_win]
-            best_score = -1.0
-            best_shift = 0.0
-            best_peak = None
-            for obs_mz in window[:, 0]:
-                shift = float(obs_mz) - peak_theory_mz
-                shifted_mz = theory_plot[:, 0] + shift
-                y_obs = observed_intensities_isodec(
-                    spectrum_mz,
-                    spectrum_int,
-                    shifted_mz,
-                    z=int(cfg.CHARGE),
-                    match_tol_ppm=float(cfg.MATCH_TOL_PPM),
-                    peak_mz=float(obs_mz),
-                )
-                score = css_similarity(y_obs, theory_plot[:, 1])
-                if score > best_score:
-                    best_score = score
-                    best_shift = shift
-                    best_peak = float(obs_mz)
-            if best_peak is not None:
-                peak_obs_mz = best_peak
-                theory_plot[:, 0] += best_shift
-
-    if peak_obs_mz is not None:
-        idx = int(np.argmin(np.abs(spectrum[:, 0] - peak_obs_mz)))
-        scale = float(spectrum[idx, 1]) / float(np.max(theory_plot[:, 1]))
-    else:
-        scale = float(np.max(spectrum[:, 1])) / float(np.max(theory_plot[:, 1]))
-    theory_plot[:, 1] *= scale
-
-    if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
-        mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
-        mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
-        theory_plot = theory_plot[(theory_plot[:, 0] >= mz_min) & (theory_plot[:, 0] <= mz_max)]
-        if theory_plot.size == 0:
-            raise ValueError("Theoretical distribution is empty inside the selected m/z window.")
-
-    plot_overlay(
-        spectrum,
-        [(theory_plot, "tab:red", f"Precursor (z={cfg.CHARGE})")],
-        mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
-        mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
-    )
+def run_raw_mode(spectrum) -> None:
+    if spectrum.ndim != 2 or spectrum.shape[1] != 2:
+        raise ValueError(f"Expected spectrum shape (N, 2), got {spectrum.shape}")
+    plot_overlay(spectrum, [], mz_min=None, mz_max=None)
 
 
-def run_precursor_series_mode(residues, spectrum, isodec_config) -> None:
-    # 1. 计算母离子的基础组成 (与原 run_precursor_mode 一致)
-    base_comp = residue_range_composition(residues, 0, len(residues)) + ms.Composition("H2O")
-    if cfg.AMIDATED:
-        base_comp += ms.Composition(cfg.AMIDATION_FORMULA)
+def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
+    complex_comp = get_precursor_composition(residues)
+    precursor_theories: dict[int, dict] = {}
 
-    comp = base_comp * int(cfg.COPIES)
-    comp += ms.Composition("H-2") * int(cfg.DISULFIDE_BONDS)
-    
-    results = []
-    overlays = []
-    # 定义颜色循环用于绘图
-    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:brown"]
-
-    # 2. 遍历从原始电荷到最小电荷的所有电荷态
-    start_z = int(cfg.CHARGE)
-    end_z = int(cfg.PRECURSOR_SERIES_MIN_CHARGE)
-    
-    print(f"Running precursor_series mode from z={start_z} down to z={end_z}...")
-
-    # 计算实验数据的最大强度，用于统一缩放理论峰
-    max_exp_int = float(np.max(spectrum[:, 1]))
-
-    for i, z in enumerate(range(start_z, end_z - 1, -1)):
+    for z in range(int(cfg.PRECURSOR_MIN_CHARGE), int(cfg.PRECURSOR_MAX_CHARGE) + 1):
         try:
-            dist = theoretical_isodist_from_comp(comp, z)
-        except Exception as e:
-            print(f"  z={z}: Failed to generate theory: {e}")
+            dist = theoretical_isodist_from_comp(complex_comp, z)
+        except ValueError:
             continue
-
         if dist.size == 0:
-            print(f"  z={z}: Theoretical distribution is empty.")
             continue
+        anchor_idx = int(np.argmax(dist[:, 1]))
+        anchor_mz = float(dist[anchor_idx, 0])
+        precursor_theories[z] = {"dist": dist, "anchor_mz": anchor_mz}
 
-        # 对齐到数据
-        peak_theory_mz = float(dist[np.argmax(dist[:, 1]), 0])
-        peak_obs_mz = None
-        if cfg.ALIGN_TO_DATA:
-            spectrum_mz = spectrum[:, 0]
-            spectrum_int = spectrum[:, 1]
-            in_win = (spectrum_mz >= peak_theory_mz - cfg.ALIGN_WINDOW_MZ) & (
-                spectrum_mz <= peak_theory_mz + cfg.ALIGN_WINDOW_MZ
+    if not precursor_theories:
+        print("No precursor theories generated; check composition and charge range.")
+        return spectrum
+
+    work_spectrum = np.array(spectrum, dtype=float, copy=True)
+    match_found = False
+    best_z = None
+    best_css = 0.0
+    shift_ppm = 0.0
+    best_obs_mz = None
+
+    print(f"--- Starting Precursor Search (Max iterations: {int(cfg.PRECURSOR_SEARCH_ITERATIONS)}) ---")
+
+    for iteration in range(1, int(cfg.PRECURSOR_SEARCH_ITERATIONS) + 1):
+        if work_spectrum.size == 0:
+            break
+
+        max_idx = int(np.argmax(work_spectrum[:, 1]))
+        raw_obs_mz = float(work_spectrum[max_idx, 0])
+
+        local_centroids = get_local_centroids_window(
+            work_spectrum[:, 0], work_spectrum[:, 1], raw_obs_mz, lb=-1.0, ub=1.0
+        )
+        if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+            centroid_idx = int(np.argmax(local_centroids[:, 1]))
+            obs_mz = float(local_centroids[centroid_idx, 0])
+        else:
+            obs_mz = raw_obs_mz
+            local_centroids = work_spectrum
+
+        candidate_charges = []
+        for z, theory in precursor_theories.items():
+            if within_ppm(obs_mz, theory["anchor_mz"], float(cfg.MATCH_TOL_PPM)):
+                candidate_charges.append(z)
+
+        for z in candidate_charges:
+            dist = precursor_theories[z]["dist"]
+            if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                accepted, isodec_css, shifted_peak = isodec_css_and_accept(
+                    local_centroids, dist, z=z, peakmz=obs_mz, config=isodec_config
+                )
+                if shifted_peak is not None:
+                    obs_mz = float(shifted_peak)
+            else:
+                y_obs = observed_intensities_isodec(
+                    local_centroids[:, 0],
+                    local_centroids[:, 1],
+                    dist[:, 0],
+                    z=int(z),
+                    match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                    peak_mz=obs_mz,
+                )
+                isodec_css = css_similarity(y_obs, dist[:, 1])
+                accepted = isodec_css >= float(cfg.MIN_COSINE)
+
+            if accepted and isodec_css >= float(cfg.MIN_COSINE):
+                match_found = True
+                best_z = int(z)
+                best_css = float(isodec_css)
+                best_obs_mz = float(obs_mz)
+                theory_mz = float(precursor_theories[z]["anchor_mz"])
+                shift_ppm = ((best_obs_mz - theory_mz) / theory_mz) * 1e6
+                break
+
+        if match_found:
+            print(
+                f"Precursor found in iteration {iteration}: z={best_z}+ "
+                f"m/z={best_obs_mz:.4f} css={best_css:.3f}"
             )
-            if np.any(in_win):
-                window = spectrum[in_win]
-                best_score = -1.0
-                best_shift = 0.0
-                best_peak = None
-                for obs_mz in window[:, 0]:
-                    shift = float(obs_mz) - peak_theory_mz
-                    shifted_mz = dist[:, 0] + shift
-                    y_obs = observed_intensities_isodec(
-                        spectrum_mz,
-                        spectrum_int,
-                        shifted_mz,
-                        z=int(z),
-                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
-                        peak_mz=float(obs_mz),
-                    )
-                    score = css_similarity(y_obs, dist[:, 1])
-                    if score > best_score:
-                        best_score = score
-                        best_shift = shift
-                        best_peak = float(obs_mz)
-                if best_peak is not None:
-                    peak_obs_mz = best_peak
-                    dist[:, 0] += best_shift
+            break
 
-        # 缩放强度，确保理论峰中最强的峰与实验峰中的高度一致
-        # 1. 找到理论分布中的最强峰
-        max_theory_idx = int(np.argmax(dist[:, 1]))
-        max_theory_mz = float(dist[max_theory_idx, 0])
-        max_theory_int = float(dist[max_theory_idx, 1])
-        
-        # 2. 在实验数据中找到与理论最强峰对应的实验峰
-        # 首先在理论最强峰附近搜索
-        spectrum_mz = spectrum[:, 0]
-        spectrum_int = spectrum[:, 1]
-        
-        # 定义搜索窗口
-        search_window = float(cfg.ALIGN_WINDOW_MZ) if cfg.ALIGN_WINDOW_MZ is not None else 0.5
-        in_window = (spectrum_mz >= max_theory_mz - search_window) & (spectrum_mz <= max_theory_mz + search_window)
-        
-        target_intensity = None
-        if np.any(in_window):
-            # 在窗口内找到最接近的实验峰
-            window_mz = spectrum_mz[in_window]
-            window_int = spectrum_int[in_window]
-            closest_idx = int(np.argmin(np.abs(window_mz - max_theory_mz)))
-            target_intensity = float(window_int[closest_idx])
-        
-        # 如果没有找到匹配的实验峰，使用实验数据的最大强度
-        if target_intensity is None:
-            target_intensity = max_exp_int
-        
-        # 3. 计算缩放因子并应用，确保理论最强峰与实验峰高度一致
-        if max_theory_int > 0:
-            scale = target_intensity / max_theory_int
-            dist[:, 1] *= scale
+        keep_mask = np.abs(work_spectrum[:, 0] - raw_obs_mz) > 1.0
+        work_spectrum = work_spectrum[keep_mask]
+        print(f"Iteration {iteration}: peak at {raw_obs_mz:.4f} failed CSS; blanking and retrying.")
 
-        # 应用 m/z 窗口过滤
-        if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
-            mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
-            mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
-            dist = dist[(dist[:, 0] >= mz_min) & (dist[:, 0] <= mz_max)]
-            if dist.size == 0:
-                print(f"  z={z}: Theoretical distribution is empty inside the selected m/z window.")
+    calibrated_spectrum = np.array(spectrum, dtype=float, copy=True)
+    if match_found and bool(cfg.ENABLE_LOCK_MASS):
+        print(f"Applying lock-mass calibration: shift {-shift_ppm:.2f} ppm")
+        calibrated_spectrum[:, 0] = calibrated_spectrum[:, 0] / (1.0 + (shift_ppm / 1e6))
+
+        theory_dist = precursor_theories[best_z]["dist"]
+        label = f"Precursor {best_z}+ (css={best_css:.3f}, shift {-shift_ppm:.2f} ppm)"
+        plot_overlay(
+            calibrated_spectrum,
+            [(theory_dist, "tab:red", label)],
+            mz_min=float(theory_dist[0, 0]) - 5,
+            mz_max=float(theory_dist[-1, 0]) + 5,
+        )
+    elif not match_found:
+        print("Precursor not found; no calibration applied.")
+
+    return calibrated_spectrum
+
+
+def run_charge_reduced_mode(residues, spectrum, isodec_config) -> None:
+    spectrum_mz = spectrum[:, 0]
+    spectrum_int = spectrum[:, 1]
+    obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
+
+    targets: dict[str, tuple[object, str]] = {}
+    monomer_comp = get_neutral_monomer_composition(residues)
+    targets["Monomer"] = (monomer_comp, "tab:blue")
+    if int(cfg.COPIES) > 1:
+        complex_comp = get_precursor_composition(residues)
+        targets[f"Complex ({int(cfg.COPIES)}x)"] = (complex_comp, "tab:red")
+
+    matches: list[dict] = []
+    print("--- Starting Charge-Reduced Precursor Search (data-driven anchor) ---")
+
+    state_shifts = [
+        ("0", 0),
+        ("+H", 1),
+        ("+2H", 2),
+        ("-H", -1),
+        ("-2H", -2),
+    ]
+
+    for label, (target_comp, color) in targets.items():
+        for z in range(int(cfg.CR_MIN_CHARGE), int(cfg.CR_MAX_CHARGE) + 1):
+            try:
+                dist0 = theoretical_isodist_from_comp(target_comp, z)
+            except ValueError:
+                continue
+            if dist0.size == 0:
                 continue
 
-        # 匹配观察峰
-        matches = match_theory_peaks(
-            spectrum[:, 0], spectrum[:, 1], dist[:, 0],
-            tol_ppm=float(cfg.MATCH_TOL_PPM), theory_int=dist[:, 1]
-        )
-        
-        # 计算得分 (CSS)
-        obs_intensities = np.array([m["obs_int"] if m["within"] else 0.0 for m in matches])
-        score = css_similarity(obs_intensities, dist[:, 1])
-        
-        print(f"  z={z}: CSS Score = {score:.4f}")
-        
-        # Always add to overlays regardless of CSS threshold
-        results.append({"z": z, "score": score, "matches": matches})
-        color = colors[i % len(colors)]
-        overlays.append((dist, color, f"Precursor z={z}"))
+            theory_base_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+            window_mask = (spectrum_mz >= theory_base_mz - 2.0) & (spectrum_mz <= theory_base_mz + 2.0)
+            if not np.any(window_mask):
+                continue
+            window_idx = np.where(window_mask)[0]
+            obs_anchor_mz = float(spectrum_mz[window_idx[np.argmax(spectrum_int[window_idx])]])
 
-    # 3. 绘图与结果展示
-    if overlays:
-        plot_overlay(spectrum, overlays, mz_min=cfg.MZ_MIN, mz_max=cfg.MZ_MAX)
-    else:
-        print("No precursor series members passed the CSS threshold.")
+            local_centroids = get_local_centroids_window(
+                spectrum_mz, spectrum_int, center_mz=obs_anchor_mz, lb=-3.0, ub=3.0
+            )
+            if not isinstance(local_centroids, np.ndarray) or local_centroids.size == 0:
+                continue
+            cent_mz = local_centroids[:, 0]
+            cent_int = local_centroids[:, 1]
+
+            best_candidate = None
+            for state, h_shift in state_shifts:
+                dist = dist0.copy()
+                dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+
+                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                    accepted, css, shifted_peak = isodec_css_and_accept(
+                        local_centroids, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                    )
+                else:
+                    y_obs = observed_intensities_isodec(
+                        cent_mz,
+                        cent_int,
+                        dist[:, 0],
+                        z=int(z),
+                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        peak_mz=obs_anchor_mz,
+                    )
+                    css = css_similarity(y_obs, dist[:, 1])
+                    accepted = css >= float(cfg.MIN_COSINE)
+                    shifted_peak = None
+
+                if not accepted or css < float(cfg.MIN_COSINE):
+                    continue
+
+                obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
+                obs_idx = nearest_peak_index(cent_mz, obs_mz)
+                obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+
+                dist_full = dist.copy()
+                dist_plot = dist.copy()
+                max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
+                if max_plot > 0 and obs_int > 0:
+                    dist_plot[:, 1] *= obs_int / max_plot
+                keep = dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF) if max_plot > 0 else dist_plot[:, 1] > 0
+                dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+
+                theory_matches = match_theory_peaks(
+                    cent_mz,
+                    cent_int,
+                    dist_full[:, 0],
+                    tol_ppm=float(cfg.MATCH_TOL_PPM),
+                    theory_int=dist_full[:, 1],
+                )
+
+                candidate = {
+                    "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
+                    "target": label,
+                    "z": int(z),
+                    "state": state,
+                    "css": float(css),
+                    "obs_mz": obs_mz,
+                    "obs_int": obs_int,
+                    "dist_full": dist_full,
+                    "dist": dist_plot,
+                    "theory_matches": theory_matches,
+                    "color": color,
+                }
+
+                if best_candidate is None or candidate["css"] > best_candidate["css"]:
+                    best_candidate = candidate
+
+            if best_candidate is not None:
+                matches.append(best_candidate)
+
+    matches.sort(key=lambda x: (x["css"], x["obs_int"]), reverse=True)
+    print(f"Identified {len(matches)} charge-reduced forms:")
+    for m in matches:
+        print(f"  {m['label']} at m/z {m['obs_mz']:.3f} (I={m['obs_int']:.1f})")
+
+    overlays = [(m["dist"], m["color"], m["label"]) for m in matches]
+    plot_overlay(
+        spectrum,
+        overlays,
+        mz_min=cfg.MZ_MIN,
+        mz_max=cfg.MZ_MAX,
+        noise_cutoff=(obs_max * float(cfg.MIN_OBS_REL_INT)) if float(cfg.MIN_OBS_REL_INT) > 0 else None,
+    )
+
+    if bool(cfg.CHARGE_REDUCED_EXPORT_CSV):
+        out_dir = Path(__file__).parent / "charge_reduced_outputs"
+        file_tag = sanitize_filename(Path(str(cfg.filepath)).stem)
+        base = sanitize_filename(f"charge_reduced_scan{int(cfg.SCAN)}_{file_tag}")
+
+        summary_path = (
+            Path(cfg.CHARGE_REDUCED_CSV_SUMMARY_PATH)
+            if cfg.CHARGE_REDUCED_CSV_SUMMARY_PATH
+            else out_dir / f"{base}_summary.csv"
+        )
+        peaks_path = (
+            Path(cfg.CHARGE_REDUCED_CSV_PEAKS_PATH)
+            if cfg.CHARGE_REDUCED_CSV_PEAKS_PATH
+            else out_dir / f"{base}_peaks.csv"
+        )
+
+        summary_rows = []
+        peaks_rows = []
+        if matches:
+            for m in matches:
+                summary_rows.append(
+                    {
+                        "label": m.get("label", ""),
+                        "target": m.get("target", ""),
+                        "z": m.get("z", ""),
+                        "state": m.get("state", ""),
+                        "css": m.get("css", ""),
+                        "obs_mz": m.get("obs_mz", ""),
+                        "obs_int": m.get("obs_int", ""),
+                    }
+                )
+
+                for p in m.get("theory_matches", []) if isinstance(m.get("theory_matches"), list) else []:
+                    peaks_rows.append(
+                        {
+                            "label": m.get("label", ""),
+                            "target": m.get("target", ""),
+                            "z": m.get("z", ""),
+                            "state": m.get("state", ""),
+                            "css": m.get("css", ""),
+                            "theory_mz": p.get("theory_mz", ""),
+                            "theory_int": p.get("theory_int", ""),
+                            "obs_mz": p.get("obs_mz", ""),
+                            "ppm": p.get("ppm", ""),
+                            "obs_int": p.get("obs_int", ""),
+                            "within": p.get("within", ""),
+                            "obs_idx": p.get("obs_idx", ""),
+                        }
+                    )
+        else:
+            for label, (target_comp, _) in targets.items():
+                for z in range(int(cfg.CR_MIN_CHARGE), int(cfg.CR_MAX_CHARGE) + 1):
+                    try:
+                        dist0 = theoretical_isodist_from_comp(target_comp, z)
+                    except ValueError:
+                        continue
+                    if dist0.size == 0:
+                        continue
+
+                    for state, h_shift in state_shifts:
+                        dist = dist0.copy()
+                        dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+                        summary_rows.append(
+                            {
+                                "label": f"{label}^{z}+",
+                                "target": label,
+                                "z": int(z),
+                                "state": state,
+                                "css": "",
+                                "obs_mz": "",
+                                "obs_int": "",
+                            }
+                        )
+                        for mz_val, int_val in dist:
+                            peaks_rows.append(
+                                {
+                                    "label": f"{label}^{z}+",
+                                    "target": label,
+                                    "z": int(z),
+                                    "state": state,
+                                    "css": "",
+                                    "theory_mz": float(mz_val),
+                                    "theory_int": float(int_val),
+                                    "obs_mz": "",
+                                    "ppm": "",
+                                    "obs_int": "",
+                                    "within": False,
+                                    "obs_idx": "",
+                                }
+                            )
+
+        write_csv(
+            summary_path,
+            ["label", "target", "z", "state", "css", "obs_mz", "obs_int"],
+            summary_rows,
+        )
+        write_csv(
+            peaks_path,
+            [
+                "label",
+                "target",
+                "z",
+                "state",
+                "css",
+                "theory_mz",
+                "theory_int",
+                "obs_mz",
+                "ppm",
+                "obs_int",
+                "within",
+                "obs_idx",
+            ],
+            peaks_rows,
+        )
+        print(f"Wrote CSV: {summary_path}")
+        print(f"Wrote CSV: {peaks_path}")
 
 
 def run_fragments_mode(residues, spectrum, isodec_config) -> None:
@@ -303,10 +464,20 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 # Use regular fragment composition
                 frag_name, target_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
             
-            def evaluate_candidate(loss_suffix: str, loss_comp, z: int):
+            cys_variants = get_disulfide_logic(ion_type, frag_len, n)
+            if not cys_variants:
+                cys_variants = [("", None)]
+
+            def evaluate_candidate(
+                frag_id_base: str,
+                loss_suffix: str,
+                loss_comp,
+                z: int,
+                variant_suffix: str,
+                variant_type: str,
+            ):
                 try:
-                    # Use target_comp for complex_fragments mode
-                    dist0 = theoretical_isodist_from_comp(target_comp, z)
+                    dist0 = theoretical_isodist_from_comp(loss_comp, z)
                 except ValueError:
                     return None
                 if dist0.size == 0:
@@ -354,9 +525,25 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 )
                 y0 = vectorize_dist(dist0, sample_keys, scale, mz_min=cfg.MZ_MIN, mz_max=cfg.MZ_MAX)
 
-                neutral_score = css_similarity(y_obs, y0)
+                neutral_score_union = css_similarity(y_obs, y0)
+                neutral_score = neutral_score_union
+                dist0_neutral = dist0
+                if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
+                    mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
+                    mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
+                    dist0_neutral = dist0[(dist0[:, 0] >= mz_min) & (dist0[:, 0] <= mz_max)]
+                if dist0_neutral.size:
+                    y_obs_neutral = observed_intensities_isodec(
+                        spectrum_mz,
+                        spectrum_int,
+                        dist0_neutral[:, 0],
+                        z=int(z),
+                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        peak_mz=peak_mz,
+                    )
+                    neutral_score = css_similarity(y_obs_neutral, dist0_neutral[:, 1])
                 best_model = "neutral"
-                best_score = neutral_score
+                best_score = neutral_score_union
                 best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
                 best_pred = y0
 
@@ -407,12 +594,14 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                             "-2H": weights_minus.get("-2H", 0.0),
                         }
 
-                    rel_improve = (best_score - neutral_score) / max(neutral_score, 1e-12)
+                    rel_improve = (best_score - neutral_score_union) / max(neutral_score_union, 1e-12)
                     if best_model != "neutral" and rel_improve < float(cfg.H_TRANSFER_MIN_REL_IMPROVEMENT):
                         best_model = "neutral"
-                        best_score = neutral_score
+                        best_score = neutral_score_union
                         best_pred = y0
                         best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
+                if best_model == "neutral":
+                    best_score = neutral_score
 
                 if float(np.max(best_pred)) <= 0.0:
                     return None
@@ -483,7 +672,7 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                         ppm = (obs_mz - anchor_theory_mz) / anchor_theory_mz * 1e6
                         dist_plot[:, 0] += obs_mz - old_obs_mz
 
-                frag_id = f"{frag_name}{loss_suffix}"
+                frag_id = f"{frag_id_base}{loss_suffix}"
                 obs_rel_int = float(obs_int / obs_max) if obs_max > 0 else 0.0
                 label_parts = [f"{frag_id}^{z}+", f"{ppm:.1f} ppm", f"css={isodec_css:.3f}"]
                 if best_model != "neutral":
@@ -501,6 +690,8 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                     "frag_len": int(frag_len),
                     "charge": int(z),
                     "loss_suffix": loss_suffix,
+                    "variant_suffix": variant_suffix,
+                    "variant_type": variant_type,
                     "best_model": best_model,
                     "obs_idx": int(obs_idx),
                     "obs_mz": float(obs_mz),
@@ -517,28 +708,81 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                     "color": ion_colors.get(ion_type, "tab:purple"),
                 }
 
+            variant_shift_map = {suffix: shift for suffix, shift in cys_variants}
+
             for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
-                neutral_match = evaluate_candidate("", target_comp, z)
-                
-                # 判据 A: 如果根本没找到匹配 (evaluate_candidate 返回 None)，直接跳过后续 Loss
-                if neutral_match is None:
+                neutral_candidates = []
+                for variant_suffix, shift_comp in cys_variants:
+                    if shift_comp:
+                        try:
+                            variant_comp = target_comp + shift_comp
+                        except Exception:
+                            continue
+                        frag_id_base = f"{frag_name}{variant_suffix}"
+                    else:
+                        variant_comp = target_comp
+                        frag_id_base = frag_name
+
+                    variant_type = variant_type_from_suffix(variant_suffix)
+                    neutral_match = evaluate_candidate(
+                        frag_id_base,
+                        "",
+                        variant_comp,
+                        z,
+                        variant_suffix,
+                        variant_type,
+                    )
+                    if neutral_match is not None:
+                        neutral_candidates.append(neutral_match)
+
+                if not neutral_candidates:
                     continue
 
-                # 判据 B: 只有当中性匹配通过最终输出筛选时才考虑中性丢失变体
-                # 这使用与最终片段选择相同的 IsoDec CSS 阈值
-                if neutral_match["score"] < float(cfg.ISODEC_CSS_THRESH):
-                    # 如果中性分数低于最终输出阈值，保留它但不尝试匹配 Loss
-                    matches.append(neutral_match)
-                    continue  # 跳过下方的 Loss 循环
+                pass_count = 0
+                for candidate in neutral_candidates:
+                    try:
+                        score_val = float(candidate.get("score", float("-inf")))
+                    except Exception:
+                        score_val = float("-inf")
+                    if score_val >= float(cfg.ISODEC_CSS_THRESH):
+                        pass_count += 1
 
-                matches.append(neutral_match)
-                
-                # 只有当中性匹配通过最终输出筛选时才进入此循环
-                for loss_suffix, loss_comp in neutral_loss_variants(target_comp, ion_series_letter=series):
+                best_neutral = max(neutral_candidates, key=variant_rank_key_from_result)
+                best_neutral["variant_pass_count"] = int(pass_count)
+                matches.append(best_neutral)
+
+                # Gate B: only consider loss variants if neutral passes final CSS filter.
+                if best_neutral["score"] < float(cfg.ISODEC_CSS_THRESH):
+                    continue
+
+                best_suffix = best_neutral.get("variant_suffix", "")
+                best_shift = variant_shift_map.get(best_suffix)
+                if best_shift:
+                    try:
+                        variant_comp = target_comp + best_shift
+                    except Exception:
+                        continue
+                    frag_id_base = f"{frag_name}{best_suffix}"
+                else:
+                    variant_comp = target_comp
+                    frag_id_base = frag_name
+
+                variant_type = best_neutral.get("variant_type") or variant_type_from_suffix(best_suffix)
+
+                # Loss variants only after neutral passes final filter.
+                for loss_suffix, loss_comp in neutral_loss_variants(variant_comp, ion_series_letter=series):
                     if not loss_suffix:
                         continue
-                    loss_match = evaluate_candidate(loss_suffix, loss_comp, z)
+                    loss_match = evaluate_candidate(
+                        frag_id_base,
+                        loss_suffix,
+                        loss_comp,
+                        z,
+                        best_suffix,
+                        variant_type,
+                    )
                     if loss_match is not None:
+                        loss_match["variant_pass_count"] = int(pass_count)
                         matches.append(loss_match)
 
     best_by_obs: dict[int, dict] = {}
@@ -592,6 +836,9 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                     "CO2": loss_cols["CO2"],
                     "2H2O": loss_cols["2H2O"],
                     "2NH3": loss_cols["2NH3"],
+                    "variant_type": m.get("variant_type", ""),
+                    "variant_suffix": m.get("variant_suffix", ""),
+                    "variant_pass_count": m.get("variant_pass_count", ""),
                     "%H": pct_h,
                     "%2H": pct_2h,
                     "obs_idx": m.get("obs_idx", ""),
@@ -631,6 +878,9 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                             "CO2": loss_cols["CO2"],
                             "2H2O": loss_cols["2H2O"],
                             "2NH3": loss_cols["2NH3"],
+                            "variant_type": m.get("variant_type", ""),
+                            "variant_suffix": m.get("variant_suffix", ""),
+                            "variant_pass_count": m.get("variant_pass_count", ""),
                             "%H": pct_h,
                             "%2H": pct_2h,
                             "css": m.get("score", ""),
@@ -659,6 +909,9 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 "CO2",
                 "2H2O",
                 "2NH3",
+                "variant_type",
+                "variant_suffix",
+                "variant_pass_count",
                 "%H",
                 "%2H",
                 "obs_idx",
@@ -690,6 +943,9 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 "CO2",
                 "2H2O",
                 "2NH3",
+                "variant_type",
+                "variant_suffix",
+                "variant_pass_count",
                 "%H",
                 "%2H",
                 "css",
@@ -721,6 +977,7 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
     if not cfg.DIAGNOSE_ION_SPEC:
         raise ValueError('Set DIAGNOSE_ION_SPEC (e.g., "c7^2+" or "z12-2H2O^3+") when using PLOT_MODE="diagnose".')
 
+    raw_spectrum = np.array(spectrum, dtype=float, copy=True)
     if bool(cfg.ENABLE_FRAGMENT_INTENSITY_CAP):
         tol_ppm = float(cfg.MATCH_TOL_PPM) if cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM is None else float(
             cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM
@@ -801,13 +1058,13 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
         # Print diagnostic steps for each charge state
         print(f"\n--- Charge {z}+ ---")
         for step in r.get("diagnostic_steps", []):
-            status_icon = "✅" if step["status"] == "pass" else "❌" if step["status"] == "fail" else "ℹ️"
+            status_icon = "PASS" if step["status"] == "pass" else "FAIL" if step["status"] == "fail" else "INFO"
             print(f"{status_icon} {step['step']}: {step['status']} - {step['details']}")
         
         if r.get("ok", False):
-            print(f"✅ Overall: PASS")
+            print("PASS Overall: PASS")
         else:
-            print(f"❌ Overall: FAIL - {r.get('reason', 'Unknown reason')}")
+            print(f"FAIL Overall: FAIL - {r.get('reason', 'Unknown reason')}")
         
         results.append(r)
 
@@ -849,6 +1106,9 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
                     "loss_formula": r.get("loss_formula", ""),
                     "loss_count": r.get("loss_count", ""),
                     "h_transfer": r.get("h_transfer", ""),
+                    "variant_type": r.get("variant_type", ""),
+                    "variant_suffix": r.get("variant_suffix", ""),
+                    "variant_pass_count": r.get("variant_pass_count", ""),
                     "ok": bool(r.get("ok", False)),
                     "reason": r.get("reason", ""),
                     "raw_cosine_preanchor": r.get("raw_cosine_preanchor", ""),
@@ -884,6 +1144,9 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
                     "avg_mass": avg_mass,
                     "z": int(z),
                     "h_transfer": r.get("h_transfer", ""),
+                    "variant_type": r.get("variant_type", ""),
+                    "variant_suffix": r.get("variant_suffix", ""),
+                    "variant_pass_count": r.get("variant_pass_count", ""),
                     "theory_mz": p.get("theory_mz", ""),
                     "theory_int": p.get("theory_int", ""),
                         "obs_mz": p.get("obs_mz", ""),
@@ -909,6 +1172,9 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
                 "loss_formula",
                 "loss_count",
                 "h_transfer",
+                "variant_type",
+                "variant_suffix",
+                "variant_pass_count",
                 "ok",
                 "reason",
                 "raw_cosine_preanchor",
@@ -944,6 +1210,9 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
                 "avg_mass",
                 "z",
                 "h_transfer",
+                "variant_type",
+                "variant_suffix",
+                "variant_pass_count",
                 "theory_mz",
                 "theory_int",
                 "obs_mz",
@@ -970,9 +1239,11 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
         raw = r.get("raw_cosine_preanchor", 0.0)
         css = r.get("isodec_css", None)
         css_txt = f"{css:.3f}" if isinstance(css, (int, float)) and np.isfinite(css) else "n/a"
+        mono_txt = f"{mono_mass:.6f}" if isinstance(mono_mass, (int, float)) and np.isfinite(mono_mass) else str(mono_mass)
+        avg_txt = f"{avg_mass:.6f}" if isinstance(avg_mass, (int, float)) and np.isfinite(avg_mass) else str(avg_mass)
         print(
             f"- {label}\tok={r['ok']}\treason={r['reason']}\tformula={formula}\t"
-            f"mono_mass={mono_mass:.6f}\tavg_mass={avg_mass:.6f}\t"
+            f"mono_mass={mono_txt}\tavg_mass={avg_txt}\t"
             f"rawcos={raw:.3f}\tcss={css_txt}"
         )
         if r.get("anchor_within_ppm"):
@@ -1008,19 +1279,70 @@ def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
                 )
 
     best = results[0] if results else None
-    if bool(cfg.DIAGNOSE_SHOW_PLOT) and isinstance(best, dict) and isinstance(best.get("dist_plot"), np.ndarray):
-        z = best["z"]
-        frag_name = best.get("frag_name", f"{ion_type}{frag_len}")
-        loss = ""
-        if loss_formula and loss_count:
-            loss = neutral_loss_label(int(loss_count), loss_formula)
-        label = f"{frag_name}{loss}^{z}+"
-        plot_overlay(
-            spectrum,
-            [(best["dist_plot"], "tab:purple", f"diagnose {label}")],
-            mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
-            mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
-            noise_cutoff=(float(np.max(spectrum[:, 1])) * float(cfg.MIN_OBS_REL_INT))
-            if float(cfg.MIN_OBS_REL_INT) > 0
-            else None,
-        )
+    if bool(cfg.DIAGNOSE_SHOW_PLOT):
+        if isinstance(best, dict) and isinstance(best.get("dist_plot"), np.ndarray):
+            z = best["z"]
+            frag_name = best.get("frag_name", f"{ion_type}{frag_len}")
+            loss = ""
+            if loss_formula and loss_count:
+                loss = neutral_loss_label(int(loss_count), loss_formula)
+            label = f"{frag_name}{loss}^{z}+"
+            plot_overlay(
+                spectrum,
+                [(best["dist_plot"], "tab:purple", f"diagnose {label}")],
+                mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
+                mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
+                noise_cutoff=(float(np.max(spectrum[:, 1])) * float(cfg.MIN_OBS_REL_INT))
+                if float(cfg.MIN_OBS_REL_INT) > 0
+                else None,
+            )
+        else:
+            try:
+                fallback_charge = best.get("z") if isinstance(best, dict) and best.get("z") else (charges[0] if charges else 1)
+                frag_name, base_comp = ion_composition_from_sequence(
+                    residues, ion_type, frag_len, amidated=cfg.AMIDATED
+                )
+                comp = apply_neutral_loss(base_comp, loss_formula, loss_count)
+                fallback_suffix = ""
+                fallback_comp = comp
+                dist_fallback = None
+                variants = get_disulfide_logic(ion_type, frag_len, len(residues))
+                if not variants:
+                    variants = [("", None)]
+                for suffix, shift in variants:
+                    try:
+                        comp_try = comp + shift if shift is not None else comp
+                        dist_try = theoretical_isodist_from_comp(comp_try, int(fallback_charge))
+                    except Exception:
+                        continue
+                    if dist_try.size:
+                        fallback_suffix = suffix
+                        fallback_comp = comp_try
+                        dist_fallback = dist_try
+                        break
+                if dist_fallback is None:
+                    dist_fallback = theoretical_isodist_from_comp(fallback_comp, int(fallback_charge))
+                if int(h_transfer) != 0 and dist_fallback.size:
+                    dist_fallback = dist_fallback.copy()
+                    dist_fallback[:, 0] += (float(h_transfer) * float(cfg.H_TRANSFER_MASS)) / float(fallback_charge)
+                if dist_fallback.size:
+                    dist_plot = dist_fallback.copy()
+                    if raw_spectrum.size:
+                        max_obs = float(np.max(raw_spectrum[:, 1]))
+                        max_theory = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
+                        if max_theory > 0:
+                            dist_plot[:, 1] *= max_obs / max_theory
+                    if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
+                        mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
+                        mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
+                        dist_plot = dist_plot[(dist_plot[:, 0] >= mz_min) & (dist_plot[:, 0] <= mz_max)]
+                    loss = neutral_loss_label(int(loss_count), loss_formula) if loss_formula and loss_count else ""
+                    label = f"{frag_name}{fallback_suffix}{loss}^{int(fallback_charge)}+"
+                    plot_overlay(
+                        raw_spectrum,
+                        [(dist_plot, "tab:purple", f"diagnose fallback {label}")],
+                        mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
+                        mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
+                    )
+            except Exception as e:
+                print(f"Fallback plot skipped: {e}")

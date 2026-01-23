@@ -4,16 +4,26 @@ import numpy as np
 from unidec.UniDecImporter import ImporterFactory
 
 import personalized_config as cfg
-from personalized_modes import run_diagnose_mode, run_fragments_mode, run_precursor_mode, run_precursor_series_mode
+from personalized_modes import (
+    run_diagnose_mode,
+    run_fragments_mode,
+    run_charge_reduced_mode,
+    run_precursor_mode,
+    run_raw_mode,
+)
 from personalized_sequence import parse_custom_sequence
 
 
-def load_spectrum(filepath: str, scan: int) -> np.ndarray:
+def load_spectrum(filepath: str, scan: int, prefer_centroid: bool = True) -> np.ndarray:
     importer = ImporterFactory.create_importer(filepath)
-    if hasattr(importer, "grab_centroid_data"):
+    if prefer_centroid and hasattr(importer, "grab_centroid_data"):
+        spectrum = importer.grab_centroid_data(scan)
+    elif hasattr(importer, "get_single_scan"):
+        spectrum = importer.get_single_scan(scan)
+    elif hasattr(importer, "grab_centroid_data"):
         spectrum = importer.grab_centroid_data(scan)
     else:
-        spectrum = importer.get_single_scan(scan)
+        raise AttributeError("Importer does not support grab_centroid_data or get_single_scan.")
     return np.asarray(spectrum, dtype=float)
 
 
@@ -37,30 +47,34 @@ def preprocess_spectrum(spectrum: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
+    mode = str(cfg.PLOT_MODE).lower()
+    spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=(mode != "raw"))
+    if mode == "raw":
+        run_raw_mode(spectrum)
+        return
+
     cfg.require_isodec_rules()
     isodec_config = cfg.build_isodec_config()
 
     if not cfg.PEPTIDE:
         raise ValueError('Set PEPTIDE (e.g. "ACDEFGHIK" or "CKLH[PO4]CKLAH")')
-    if cfg.CHARGE is None or int(cfg.CHARGE) == 0:
-        raise ValueError("Set CHARGE to a non-zero integer (e.g. 10)")
-    cfg.CHARGE = int(cfg.CHARGE)
-
     residues = parse_custom_sequence(cfg.PEPTIDE)
-    spectrum = load_spectrum(cfg.filepath, cfg.SCAN)
     spectrum = preprocess_spectrum(spectrum)
 
-    mode = str(cfg.PLOT_MODE).lower()
     if mode == "precursor":
         run_precursor_mode(residues, spectrum, isodec_config)
-    elif mode == "precursor_series":
-        run_precursor_series_mode(residues, spectrum, isodec_config)
+    elif mode == "charge_reduced":
+        run_charge_reduced_mode(residues, spectrum, isodec_config)
     elif mode == "fragments" or mode == "complex_fragments":
+        if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
+            spectrum = run_precursor_mode(residues, spectrum, isodec_config)
         run_fragments_mode(residues, spectrum, isodec_config)
     elif mode == "diagnose":
         run_diagnose_mode(residues, spectrum, isodec_config)
     else:
-        raise ValueError('PLOT_MODE must be "precursor", "precursor_series", "fragments", "complex_fragments", or "diagnose".')
+        raise ValueError(
+            'PLOT_MODE must be "raw", "precursor", "charge_reduced", "fragments", "complex_fragments", or "diagnose".'
+        )
 
 
 if __name__ == "__main__":
