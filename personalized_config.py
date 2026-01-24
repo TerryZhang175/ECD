@@ -27,7 +27,7 @@ filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_1
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "charge_reduced"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 
 # Optional: focus on an m/z region of interest.
@@ -67,6 +67,7 @@ LABEL_MATCHES = False
 ANCHOR_TOP_N = 3
 ANCHOR_MIN_MATCHES = 1
 MIN_COSINE = 0.70  # minimum cosine similarity threshold for match acceptance
+FRAG_ANCHOR_CENTROID_WINDOW_DA = 0.2
 
 # Hydrogen-transfer handling (ExD/ECD-style). Uses H+ mass (not H atom mass).
 # Only enabled for c/z by default; accept transfer only if cosine similarity

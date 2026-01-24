@@ -717,14 +717,28 @@ def diagnose_candidate(
         obs_int = None
         anchor_hits = 0
 
+        anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
         sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
         for idx in sorted_idx:
             mz_candidate = float(sample_mzs[int(idx)])
-            obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
-            obs_mz_c = float(spectrum_mz[obs_idx_c])
+            local_centroids = get_local_centroids_window(
+                spectrum_mz,
+                spectrum_int,
+                center_mz=mz_candidate,
+                lb=-anchor_window,
+                ub=anchor_window,
+            )
+            if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+                best_local_idx = int(np.argmax(local_centroids[:, 1]))
+                obs_mz_c = float(local_centroids[best_local_idx, 0])
+                obs_int_c = float(local_centroids[best_local_idx, 1])
+                obs_idx_c = nearest_peak_index(spectrum_mz, obs_mz_c)
+            else:
+                obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+                obs_mz_c = float(spectrum_mz[obs_idx_c])
+                obs_int_c = float(spectrum_int[obs_idx_c])
             if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
                 continue
-            obs_int_c = float(spectrum_int[obs_idx_c])
             if float(min_obs_rel_int) > 0 and obs_int_c < obs_max * float(min_obs_rel_int):
                 continue
             anchor_hits += 1

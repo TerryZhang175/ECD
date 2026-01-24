@@ -399,7 +399,7 @@ def run_charge_reduced_mode(residues, spectrum, isodec_config) -> None:
         print(f"Wrote CSV: {peaks_path}")
 
 
-def run_fragments_mode(residues, spectrum, isodec_config) -> None:
+def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = True) -> dict:
     if cfg.FRAG_MIN_CHARGE <= 0 or cfg.FRAG_MAX_CHARGE <= 0 or cfg.FRAG_MIN_CHARGE > cfg.FRAG_MAX_CHARGE:
         raise ValueError("Set FRAG_MIN_CHARGE/FRAG_MAX_CHARGE to a valid positive range.")
 
@@ -611,14 +611,28 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
                 obs_mz = None
                 obs_int = None
                 anchor_hits = 0
+                anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
                 sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
                 for idx in sorted_idx:
                     mz_candidate = float(sample_mzs[int(idx)])
-                    obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
-                    obs_mz_c = float(spectrum_mz[obs_idx_c])
+                    local_centroids = get_local_centroids_window(
+                        spectrum_mz,
+                        spectrum_int,
+                        center_mz=mz_candidate,
+                        lb=-anchor_window,
+                        ub=anchor_window,
+                    )
+                    if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+                        best_local_idx = int(np.argmax(local_centroids[:, 1]))
+                        obs_mz_c = float(local_centroids[best_local_idx, 0])
+                        obs_int_c = float(local_centroids[best_local_idx, 1])
+                        obs_idx_c = nearest_peak_index(spectrum_mz, obs_mz_c)
+                    else:
+                        obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+                        obs_mz_c = float(spectrum_mz[obs_idx_c])
+                        obs_int_c = float(spectrum_int[obs_idx_c])
                     if not within_ppm(obs_mz_c, mz_candidate, float(cfg.MATCH_TOL_PPM)):
                         continue
-                    obs_int_c = float(spectrum_int[obs_idx_c])
                     if float(cfg.MIN_OBS_REL_INT) > 0 and obs_int_c < obs_max * float(cfg.MIN_OBS_REL_INT):
                         continue
                     anchor_hits += 1
@@ -799,178 +813,196 @@ def run_fragments_mode(residues, spectrum, isodec_config) -> None:
     best.sort(key=lambda d: (d["score"], d["obs_int"]), reverse=True)
     best = best[: int(cfg.MAX_PLOTTED_FRAGMENTS)]
 
-    print(f"Matched fragments: {len(best)} (from {len(matches)} raw matches)")
-    for m in best:
-        print(f"{m['label']}\tI={m['obs_int']:.3g}\tcos0={m['neutral_score']:.3f}\trawcos={m['raw_score']:.3f}")
-
-    if bool(cfg.EXPORT_FRAGMENTS_CSV):
-        out_dir = Path(__file__).parent / "match_outputs"
-        file_tag = sanitize_filename(Path(str(cfg.filepath)).stem)
-        mz_tag = f"{'' if cfg.MZ_MIN is None else int(cfg.MZ_MIN)}-{'' if cfg.MZ_MAX is None else int(cfg.MZ_MAX)}"
-        base = sanitize_filename(f"fragments_scan{int(cfg.SCAN)}_{file_tag}_mz{mz_tag}")
-
-        summary_path = Path(cfg.FRAGMENTS_CSV_SUMMARY_PATH) if cfg.FRAGMENTS_CSV_SUMMARY_PATH else (
-            out_dir / f"{base}_summary.csv"
-        )
-        peaks_path = Path(cfg.FRAGMENTS_CSV_PEAKS_PATH) if cfg.FRAGMENTS_CSV_PEAKS_PATH else (
-            out_dir / f"{base}_peaks.csv"
-        )
-
-        summary_rows = []
-        peaks_rows = []
+    if emit_outputs:
+        print(f"Matched fragments: {len(best)} (from {len(matches)} raw matches)")
         for m in best:
-            h = m.get("h_weights") or {}
-            pct_h = 100.0 * float(h.get("+H", 0.0) + h.get("-H", 0.0))
-            pct_2h = 100.0 * float(h.get("+2H", 0.0) + h.get("-2H", 0.0))
-            loss_cols = neutral_loss_columns(m.get("loss_suffix", ""))
-            summary_rows.append(
-                {
-                    "frag_id": m.get("frag_id", ""),
-                    "ion_type": m.get("ion_type", ""),
-                    "series": m.get("series", ""),
-                    "frag_len": m.get("frag_len", ""),
-                    "charge": m.get("charge", ""),
-                    "H2O": loss_cols["H2O"],
-                    "NH3": loss_cols["NH3"],
-                    "CO": loss_cols["CO"],
-                    "CO2": loss_cols["CO2"],
-                    "2H2O": loss_cols["2H2O"],
-                    "2NH3": loss_cols["2NH3"],
-                    "variant_type": m.get("variant_type", ""),
-                    "variant_suffix": m.get("variant_suffix", ""),
-                    "variant_pass_count": m.get("variant_pass_count", ""),
-                    "%H": pct_h,
-                    "%2H": pct_2h,
-                    "obs_idx": m.get("obs_idx", ""),
-                    "obs_mz": m.get("obs_mz", ""),
-                    "obs_int": m.get("obs_int", ""),
-                    "obs_rel_int": m.get("obs_rel_int", ""),
-                    "anchor_theory_mz": m.get("anchor_theory_mz", ""),
-                    "anchor_ppm": m.get("ppm", ""),
-                    "css": m.get("score", ""),
-                    "rawcos": m.get("raw_score", ""),
-                    "cos0": m.get("neutral_score", ""),
-                    "w0": h.get("0", ""),
-                    "w_plusH": h.get("+H", ""),
-                    "w_plus2H": h.get("+2H", ""),
-                    "w_minusH": h.get("-H", ""),
-                    "w_minus2H": h.get("-2H", ""),
-                    "label": m.get("label", ""),
-                }
+            print(
+                f"{m['label']}\tI={m['obs_int']:.3g}\t"
+                f"anchor={m['anchor_theory_mz']:.4f}->{m['obs_mz']:.4f}\t"
+                f"cos0={m['neutral_score']:.3f}\trawcos={m['raw_score']:.3f}"
             )
 
-            dist = m.get("dist")
-            if isinstance(dist, np.ndarray) and dist.size:
-                for p in match_theory_peaks(
-                    spectrum_mz,
-                    spectrum_int,
-                    dist[:, 0],
-                    tol_ppm=float(cfg.MATCH_TOL_PPM),
-                    theory_int=dist[:, 1],
-                ):
-                    peaks_rows.append(
-                        {
-                            "frag_id": m.get("frag_id", ""),
-                            "charge": m.get("charge", ""),
-                            "H2O": loss_cols["H2O"],
-                            "NH3": loss_cols["NH3"],
-                            "CO": loss_cols["CO"],
-                            "CO2": loss_cols["CO2"],
-                            "2H2O": loss_cols["2H2O"],
-                            "2NH3": loss_cols["2NH3"],
-                            "variant_type": m.get("variant_type", ""),
-                            "variant_suffix": m.get("variant_suffix", ""),
-                            "variant_pass_count": m.get("variant_pass_count", ""),
-                            "%H": pct_h,
-                            "%2H": pct_2h,
-                            "css": m.get("score", ""),
-                            "rawcos": m.get("raw_score", ""),
-                            "theory_mz": p.get("theory_mz", ""),
-                            "theory_int": p.get("theory_int", ""),
-                            "obs_mz": p.get("obs_mz", ""),
-                            "ppm": p.get("ppm", ""),
-                            "obs_int": p.get("obs_int", ""),
-                            "within": p.get("within", ""),
-                            "obs_idx": p.get("obs_idx", ""),
-                        }
-                    )
+        if bool(cfg.EXPORT_FRAGMENTS_CSV):
+            out_dir = Path(__file__).parent / "match_outputs"
+            file_tag = sanitize_filename(Path(str(cfg.filepath)).stem)
+            mz_tag = f"{'' if cfg.MZ_MIN is None else int(cfg.MZ_MIN)}-{'' if cfg.MZ_MAX is None else int(cfg.MZ_MAX)}"
+            base = sanitize_filename(f"fragments_scan{int(cfg.SCAN)}_{file_tag}_mz{mz_tag}")
 
-        write_csv(
-            summary_path,
-            [
-                "frag_id",
-                "ion_type",
-                "series",
-                "frag_len",
-                "charge",
-                "H2O",
-                "NH3",
-                "CO",
-                "CO2",
-                "2H2O",
-                "2NH3",
-                "variant_type",
-                "variant_suffix",
-                "variant_pass_count",
-                "%H",
-                "%2H",
-                "obs_idx",
-                "obs_mz",
-                "obs_int",
-                "obs_rel_int",
-                "anchor_theory_mz",
-                "anchor_ppm",
-                "css",
-                "rawcos",
-                "cos0",
-                "w0",
-                "w_plusH",
-                "w_plus2H",
-                "w_minusH",
-                "w_minus2H",
-                "label",
-            ],
-            summary_rows,
-        )
-        write_csv(
-            peaks_path,
-            [
-                "frag_id",
-                "charge",
-                "H2O",
-                "NH3",
-                "CO",
-                "CO2",
-                "2H2O",
-                "2NH3",
-                "variant_type",
-                "variant_suffix",
-                "variant_pass_count",
-                "%H",
-                "%2H",
-                "css",
-                "rawcos",
-                "theory_mz",
-                "theory_int",
-                "obs_mz",
-                "ppm",
-                "obs_int",
-                "within",
-                "obs_idx",
-            ],
-            peaks_rows,
-        )
-        print(f"Wrote CSV: {summary_path}")
-        print(f"Wrote CSV: {peaks_path}")
+            summary_path = Path(cfg.FRAGMENTS_CSV_SUMMARY_PATH) if cfg.FRAGMENTS_CSV_SUMMARY_PATH else (
+                out_dir / f"{base}_summary.csv"
+            )
+            peaks_path = Path(cfg.FRAGMENTS_CSV_PEAKS_PATH) if cfg.FRAGMENTS_CSV_PEAKS_PATH else (
+                out_dir / f"{base}_peaks.csv"
+            )
 
-    overlays = [(m["dist"], m["color"], m["label"]) for m in best]
-    plot_overlay(
-        spectrum,
-        overlays,
-        mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
-        mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
-        noise_cutoff=(obs_max * float(cfg.MIN_OBS_REL_INT)) if float(cfg.MIN_OBS_REL_INT) > 0 else None,
-    )
+            summary_rows = []
+            peaks_rows = []
+            for m in best:
+                h = m.get("h_weights") or {}
+                pct_h = 100.0 * float(h.get("+H", 0.0) + h.get("-H", 0.0))
+                pct_2h = 100.0 * float(h.get("+2H", 0.0) + h.get("-2H", 0.0))
+                loss_cols = neutral_loss_columns(m.get("loss_suffix", ""))
+                summary_rows.append(
+                    {
+                        "frag_id": m.get("frag_id", ""),
+                        "ion_type": m.get("ion_type", ""),
+                        "series": m.get("series", ""),
+                        "frag_len": m.get("frag_len", ""),
+                        "charge": m.get("charge", ""),
+                        "H2O": loss_cols["H2O"],
+                        "NH3": loss_cols["NH3"],
+                        "CO": loss_cols["CO"],
+                        "CO2": loss_cols["CO2"],
+                        "2H2O": loss_cols["2H2O"],
+                        "2NH3": loss_cols["2NH3"],
+                        "variant_type": m.get("variant_type", ""),
+                        "variant_suffix": m.get("variant_suffix", ""),
+                        "variant_pass_count": m.get("variant_pass_count", ""),
+                        "%H": pct_h,
+                        "%2H": pct_2h,
+                        "obs_idx": m.get("obs_idx", ""),
+                        "obs_mz": m.get("obs_mz", ""),
+                        "obs_int": m.get("obs_int", ""),
+                        "obs_rel_int": m.get("obs_rel_int", ""),
+                        "anchor_theory_mz": m.get("anchor_theory_mz", ""),
+                        "anchor_ppm": m.get("ppm", ""),
+                        "css": m.get("score", ""),
+                        "rawcos": m.get("raw_score", ""),
+                        "cos0": m.get("neutral_score", ""),
+                        "w0": h.get("0", ""),
+                        "w_plusH": h.get("+H", ""),
+                        "w_plus2H": h.get("+2H", ""),
+                        "w_minusH": h.get("-H", ""),
+                        "w_minus2H": h.get("-2H", ""),
+                        "label": m.get("label", ""),
+                    }
+                )
+
+                dist = m.get("dist")
+                if isinstance(dist, np.ndarray) and dist.size:
+                    for p in match_theory_peaks(
+                        spectrum_mz,
+                        spectrum_int,
+                        dist[:, 0],
+                        tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        theory_int=dist[:, 1],
+                    ):
+                        peaks_rows.append(
+                            {
+                                "frag_id": m.get("frag_id", ""),
+                                "charge": m.get("charge", ""),
+                                "H2O": loss_cols["H2O"],
+                                "NH3": loss_cols["NH3"],
+                                "CO": loss_cols["CO"],
+                                "CO2": loss_cols["CO2"],
+                                "2H2O": loss_cols["2H2O"],
+                                "2NH3": loss_cols["2NH3"],
+                                "variant_type": m.get("variant_type", ""),
+                                "variant_suffix": m.get("variant_suffix", ""),
+                                "variant_pass_count": m.get("variant_pass_count", ""),
+                                "%H": pct_h,
+                                "%2H": pct_2h,
+                                "css": m.get("score", ""),
+                                "rawcos": m.get("raw_score", ""),
+                                "theory_mz": p.get("theory_mz", ""),
+                                "theory_int": p.get("theory_int", ""),
+                                "obs_mz": p.get("obs_mz", ""),
+                                "ppm": p.get("ppm", ""),
+                                "obs_int": p.get("obs_int", ""),
+                                "within": p.get("within", ""),
+                                "obs_idx": p.get("obs_idx", ""),
+                            }
+                        )
+
+            write_csv(
+                summary_path,
+                [
+                    "frag_id",
+                    "ion_type",
+                    "series",
+                    "frag_len",
+                    "charge",
+                    "H2O",
+                    "NH3",
+                    "CO",
+                    "CO2",
+                    "2H2O",
+                    "2NH3",
+                    "variant_type",
+                    "variant_suffix",
+                    "variant_pass_count",
+                    "%H",
+                    "%2H",
+                    "obs_idx",
+                    "obs_mz",
+                    "obs_int",
+                    "obs_rel_int",
+                    "anchor_theory_mz",
+                    "anchor_ppm",
+                    "css",
+                    "rawcos",
+                    "cos0",
+                    "w0",
+                    "w_plusH",
+                    "w_plus2H",
+                    "w_minusH",
+                    "w_minus2H",
+                    "label",
+                ],
+                summary_rows,
+            )
+            write_csv(
+                peaks_path,
+                [
+                    "frag_id",
+                    "charge",
+                    "H2O",
+                    "NH3",
+                    "CO",
+                    "CO2",
+                    "2H2O",
+                    "2NH3",
+                    "variant_type",
+                    "variant_suffix",
+                    "variant_pass_count",
+                    "%H",
+                    "%2H",
+                    "css",
+                    "rawcos",
+                    "theory_mz",
+                    "theory_int",
+                    "obs_mz",
+                    "ppm",
+                    "obs_int",
+                    "within",
+                    "obs_idx",
+                ],
+                peaks_rows,
+            )
+            print(f"Wrote CSV: {summary_path}")
+            print(f"Wrote CSV: {peaks_path}")
+
+        overlays = [(m["dist"], m["color"], m["label"]) for m in best]
+        plot_overlay(
+            spectrum,
+            overlays,
+            mz_min=None if cfg.MZ_MIN is None else float(cfg.MZ_MIN),
+            mz_max=None if cfg.MZ_MAX is None else float(cfg.MZ_MAX),
+            noise_cutoff=(obs_max * float(cfg.MIN_OBS_REL_INT)) if float(cfg.MIN_OBS_REL_INT) > 0 else None,
+        )
+
+    return {
+        "spectrum": spectrum,
+        "spectrum_mz": spectrum_mz,
+        "spectrum_int": spectrum_int,
+        "obs_max": obs_max,
+        "matches": matches,
+        "best": best,
+    }
+
+
+def run_fragments_headless(residues, spectrum, isodec_config) -> dict:
+    return run_fragments_mode(residues, spectrum, isodec_config, emit_outputs=False)
 
 
 def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
