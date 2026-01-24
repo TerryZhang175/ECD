@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Optional
 
 try:
-    from unidec.modules.unidecstructure import IsoDecConfig
-    from unidec.IsoDec.match import (
+    from personalized_isodec import (
+        IsoDecConfig,
         calculate_cosinesimilarity as isodec_calculate_cosinesimilarity,
         find_matches as isodec_find_matches,
         find_matched_intensities as isodec_find_matched_intensities,
@@ -18,8 +18,7 @@ except Exception:
     isodec_make_shifted_peak = None
 
 
-filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_10-11ECD_Rep2\RE0.txt"
-
+filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-11ECD_Rep2/RE0.txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -27,7 +26,7 @@ filepath = r"C:\Users\Terry\Downloads\Mannually checked ECD_29_July_ZD\S20G_04_1
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "complex_fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 
 # Optional: focus on an m/z region of interest.
@@ -120,13 +119,13 @@ DIAGNOSE_SCAN_CHARGES = True
 DIAGNOSE_SHOW_PLOT = True
 DIAGNOSE_MAX_TABLE_ROWS = 12
 DIAGNOSE_EXPORT_CSV = True
-# If None, writes to `unidec/personalized pipeline/diagnose_outputs/` with an auto filename.
+# If None, writes to `ECD/diagnose_outputs/` with an auto filename.
 DIAGNOSE_CSV_SUMMARY_PATH = None
 DIAGNOSE_CSV_PEAKS_PATH = None
 
 # CSV export for normal matching modes (e.g., PLOT_MODE="fragments").
 EXPORT_FRAGMENTS_CSV = True
-# If None, writes to `unidec/personalized pipeline/match_outputs/` with an auto filename.
+# If None, writes to `ECD/match_outputs/` with an auto filename.
 FRAGMENTS_CSV_SUMMARY_PATH = None
 FRAGMENTS_CSV_PEAKS_PATH = None
 
@@ -142,6 +141,8 @@ ISODEC_CSS_THRESH = 0.70
 ISODEC_MIN_AREA_COVERED = 0.20
 ISODEC_MZ_WINDOW_LB = -1.05
 ISODEC_MZ_WINDOW_UB = 4.05
+ISODEC_PLUSONE_INT_WINDOW_LB = 0.10
+ISODEC_PLUSONE_INT_WINDOW_UB = 0.60
 ISODEC_MINUSONE_AS_ZERO = True
 ISODEC_VERBOSE = False
 ISODEC_USE_AREA_COVERED = True
@@ -169,7 +170,7 @@ def require_isodec_rules() -> None:
     if ENABLE_ISODEC_RULES and IsoDecConfig is None:
         raise ImportError(
             "ENABLE_ISODEC_RULES=True but IsoDec modules could not be imported. "
-            "Install UniDec's Python deps (e.g., pandas/numba) or set ENABLE_ISODEC_RULES=False."
+            "Install required deps or set ENABLE_ISODEC_RULES=False."
         )
 
 
@@ -184,6 +185,8 @@ def build_isodec_config() -> Optional[IsoDecConfig]:
     config.minareacovered = float(ISODEC_MIN_AREA_COVERED) if ISODEC_USE_AREA_COVERED else 0.0
     config.mzwindowlb = float(ISODEC_MZ_WINDOW_LB)
     config.mzwindowub = float(ISODEC_MZ_WINDOW_UB)
+    config.plusoneintwindowlb = float(ISODEC_PLUSONE_INT_WINDOW_LB)
+    config.plusoneintwindowub = float(ISODEC_PLUSONE_INT_WINDOW_UB)
     config.minusoneaszero = 1 if ISODEC_MINUSONE_AS_ZERO else 0
     config.isotopethreshold = float(REL_INTENSITY_CUTOFF)
     return config

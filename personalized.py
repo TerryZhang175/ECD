@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from unidec.UniDecImporter import ImporterFactory
+from personalized_importer import ImporterFactory
 
 import personalized_config as cfg
 from personalized_modes import (

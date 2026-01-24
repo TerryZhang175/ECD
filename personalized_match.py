@@ -364,7 +364,7 @@ def isodec_css_and_accept(
             isodist_scaled[:, 1],
             0,
             int(max_shift),
-            minusoneaszero=bool(config.minusoneaszero),
+            bool(config.minusoneaszero),
         )
     )
 

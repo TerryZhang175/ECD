@@ -3,11 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 import personalized_config as cfg
-
-try:
-    from unidec.tools import peakdetect as _peakdetect
-except Exception:
-    _peakdetect = None
+from personalized_peakdetect import peakdetect as _peakdetect
 
 
 def hill_centroid_window(
