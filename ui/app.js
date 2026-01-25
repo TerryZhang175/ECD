@@ -214,6 +214,7 @@ const updateResultsTable = (fragments) => {
       const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
       const ion = frag.displayLabel || ionFallback;
       const mz = frag.obsMz != null ? frag.obsMz.toFixed(2) : '';
+      const ppm = frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '';
       const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
       const intensity = frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '';
@@ -222,7 +223,7 @@ const updateResultsTable = (fragments) => {
       const matchAttr = Number.isFinite(frag._idx) ? ` data-match-idx="${frag._idx}"` : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
-      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
     })
     .join('');
   activeResultRow = null;
@@ -564,9 +565,9 @@ resultsSort.addEventListener('change', () => {
     const bCells = b.querySelectorAll('td');
     const safe = (value) => (Number.isFinite(value) ? value : -Infinity);
     const values = {
-      score: [safe(parseFloat(aCells[4].textContent)), safe(parseFloat(bCells[4].textContent))],
+      score: [safe(parseFloat(aCells[5].textContent)), safe(parseFloat(bCells[5].textContent))],
       mz: [safe(parseFloat(aCells[1].textContent)), safe(parseFloat(bCells[1].textContent))],
-      charge: [safe(parseInt(aCells[2].textContent, 10)), safe(parseInt(bCells[2].textContent, 10))],
+      charge: [safe(parseInt(aCells[3].textContent, 10)), safe(parseInt(bCells[3].textContent, 10))],
     };
     return values[key][1] - values[key][0];
   });
