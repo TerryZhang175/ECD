@@ -46,6 +46,17 @@ def run_raw_mode(spectrum) -> None:
     plot_overlay(spectrum, [], mz_min=None, mz_max=None)
 
 
+def run_raw_headless(spectrum) -> dict:
+    if spectrum.ndim != 2 or spectrum.shape[1] != 2:
+        raise ValueError(f"Expected spectrum shape (N, 2), got {spectrum.shape}")
+    spectrum_copy = np.array(spectrum, dtype=float, copy=True)
+    return {
+        "spectrum": spectrum_copy,
+        "spectrum_mz": np.asarray(spectrum_copy[:, 0], dtype=float),
+        "spectrum_int": np.asarray(spectrum_copy[:, 1], dtype=float),
+    }
+
+
 def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
     complex_comp = get_precursor_composition(residues)
     precursor_theories: dict[int, dict] = {}
@@ -142,6 +153,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                 "css": float(isodec_css),
                 "accepted": bool(accepted),
                 "iteration": int(iteration),
+                "dist": dist,
             }
             prev = best_by_charge.get(int(z))
             if prev is None or float(candidate["css"]) > float(prev.get("css", -1.0)):

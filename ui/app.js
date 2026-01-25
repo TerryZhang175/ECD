@@ -51,6 +51,8 @@ let coveragePopoverHideTimer = null;
 let coveragePopoverActiveKey = null;
 let activeResultRow = null;
 let lastPrecursorWindow = null;
+let lastSpectrumState = null;
+let lastSpectrumOptions = {};
 
 const refreshTableRows = () => {
   tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
@@ -205,7 +207,8 @@ const loadConfig = async () => {
 
 const updateResultsTable = (fragments) => {
   const tbody = resultsTable.querySelector('tbody');
-  const ranked = [...fragments].sort((a, b) => (b.css || 0) - (a.css || 0));
+  const withIndex = fragments.map((frag, idx) => ({ ...frag, _idx: idx }));
+  const ranked = withIndex.sort((a, b) => (b.css || 0) - (a.css || 0));
   tbody.innerHTML = ranked
     .map((frag) => {
       const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
@@ -216,7 +219,10 @@ const updateResultsTable = (fragments) => {
       const intensity = frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '';
       const score = frag.css != null ? frag.css.toFixed(3) : '';
       const centerAttr = Number.isFinite(centerMz) ? ` data-center-mz="${centerMz}"` : '';
-      return `<tr${centerAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      const matchAttr = Number.isFinite(frag._idx) ? ` data-match-idx="${frag._idx}"` : '';
+      const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
+      const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
     })
     .join('');
   activeResultRow = null;
@@ -237,6 +243,9 @@ const applyFragments = (fragments, sequence, mode = 'fragments') => {
     anchorMz: frag.anchor_theory_mz,
     anchorPpm: frag.anchor_ppm,
     label: frag.label,
+    theoryMz: Array.isArray(frag.theory_mz) ? frag.theory_mz : [],
+    theoryIntensity: Array.isArray(frag.theory_intensity) ? frag.theory_intensity : [],
+    overlayColor: '#f59e0b',
   }));
   coverageRows = normalized;
   if (sequence && sequence !== peptideInput.value) {
@@ -267,8 +276,12 @@ const applyPrecursorResults = (data) => {
     anchorMz: cand.anchor_theory_mz,
     anchorPpm: cand.ppm,
     accepted: cand.accepted,
+    label: `Precursor ${cand.charge}+`,
+    theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
+    theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
+    overlayColor: cand.color || '#ef4444',
   }));
-  coverageRows = [];
+  coverageRows = rows;
   hideCoveragePopover();
   updateResultsTable(rows);
   rerenderCoverage();
@@ -307,13 +320,29 @@ const applyChargeReducedResults = (data) => {
       anchorMz: cand.anchor_theory_mz,
       anchorPpm: cand.ppm,
       label: cand.label,
+      theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
+      theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
+      overlayColor: cand.color || '#0f172a',
+      target: cand.target,
     };
   });
-  coverageRows = [];
+  coverageRows = rows;
   hideCoveragePopover();
   updateResultsTable(rows);
   rerenderCoverage();
   setCoverageStatus(rows.length ? `Charge reduced: ${rows.length} candidates` : 'Charge reduced: no matches', !rows.length);
+};
+
+const applyRawResults = (data) => {
+  const sequence = data.sequence;
+  if (sequence && sequence !== peptideInput.value) {
+    peptideInput.value = sequence;
+  }
+  coverageRows = [];
+  hideCoveragePopover();
+  updateResultsTable([]);
+  rerenderCoverage();
+  setCoverageStatus('Raw spectrum');
 };
 
 const applySpectrum = (spectrum, theory, options = {}) => {
@@ -322,7 +351,14 @@ const applySpectrum = (spectrum, theory, options = {}) => {
   }
   const theoryMz = theory && Array.isArray(theory.mz) ? theory.mz : [];
   const theoryInt = theory && Array.isArray(theory.intensity) ? theory.intensity : [];
-  renderSpectrumPlot(spectrum.mz, spectrum.intensity, theoryMz, theoryInt, options);
+  lastSpectrumState = {
+    mz: spectrum.mz,
+    intensity: spectrum.intensity,
+    theoryMz,
+    theoryInt,
+  };
+  lastSpectrumOptions = { ...options };
+  renderSpectrumPlot(spectrum.mz, spectrum.intensity, theoryMz, theoryInt, lastSpectrumOptions);
 };
 
 const startRun = async () => {
@@ -357,6 +393,7 @@ const startRun = async () => {
     const isPrecursor = mode === 'precursor';
     const isChargeReduced = mode === 'charge_reduced';
     const isComplexFragments = mode === 'complex_fragments';
+    const isRaw = mode === 'raw';
     const payload = {
       filepath: filepathValue,
       scan: scanSelect ? Number(scanSelect.value) : 1,
@@ -391,14 +428,18 @@ const startRun = async () => {
         ? '/api/run/charge_reduced'
         : isComplexFragments
           ? '/api/run/complex_fragments'
-          : '/api/run/fragments';
+          : isRaw
+            ? '/api/run/raw'
+            : '/api/run/fragments';
     const runUploadPath = isPrecursor
       ? '/api/run/precursor/upload'
       : isChargeReduced
         ? '/api/run/charge_reduced/upload'
         : isComplexFragments
           ? '/api/run/complex_fragments/upload'
-          : '/api/run/fragments/upload';
+          : isRaw
+            ? '/api/run/raw/upload'
+            : '/api/run/fragments/upload';
 
     let response;
     if (useUpload && selectedFile) {
@@ -426,6 +467,7 @@ const startRun = async () => {
     const isPrecursorMode = isPrecursor || data.mode === 'precursor';
     const isChargeReducedMode = isChargeReduced || data.mode === 'charge_reduced';
     const isComplexFragmentsMode = isComplexFragments || data.mode === 'complex_fragments';
+    const isRawMode = isRaw || data.mode === 'raw';
 
     const parsePlotWindow = (window) => {
       if (!window || typeof window !== 'object') return null;
@@ -454,6 +496,11 @@ const startRun = async () => {
       });
       const count = Number(data.count || 0);
       setWarnings(count === 0 ? ['No charge-reduced matches found.'] : []);
+    } else if (isRawMode) {
+      lastPrecursorWindow = null;
+      applyRawResults(data);
+      applySpectrum(data.spectrum, data.theory, { mode: 'raw', theoryColor: '#0f172a' });
+      setWarnings([]);
     } else {
       lastPrecursorWindow = null;
       applyFragments(data.fragments || [], data.sequence, isComplexFragmentsMode ? 'complex_fragments' : 'fragments');
@@ -885,6 +932,10 @@ const buildCoverageGroups = (length) => {
       anchorMz: row.anchorMz,
       anchorPpm: row.anchorPpm,
       label: row.label,
+      ionType,
+      fragLen,
+      theoryMz: row.theoryMz,
+      theoryIntensity: row.theoryIntensity,
     });
   });
 
@@ -986,6 +1037,48 @@ const computeSpectrumMaxAbs = (minMz, maxMz) => {
   return maxAbs;
 };
 
+const isFragmentsLikeMode = () => {
+  const mode = lastSpectrumOptions.mode;
+  return (
+    !mode ||
+    mode === 'fragments' ||
+    mode === 'complex_fragments' ||
+    mode === 'precursor' ||
+    mode === 'charge_reduced' ||
+    mode === 'raw'
+  );
+};
+
+const buildOverlayFromMatch = (match) => {
+  const mz = Array.isArray(match?.theoryMz) ? match.theoryMz : [];
+  const intensity = Array.isArray(match?.theoryIntensity) ? match.theoryIntensity : [];
+  if (!mz.length || !intensity.length) {
+    return null;
+  }
+  const label =
+    match.label ||
+    (match.ionType && Number.isFinite(match.fragLen) ? `${match.ionType}${match.fragLen}` : 'Theory');
+  const color = match.overlayColor || lastSpectrumOptions.theoryColor || '#f59e0b';
+  return { mz, intensity, color, label, target: match.target };
+};
+
+const focusSpectrumTheoryForMatch = (match) => {
+  if (!lastSpectrumState || !isFragmentsLikeMode()) {
+    return;
+  }
+  const overlay = buildOverlayFromMatch(match);
+  const options = overlay
+    ? { ...lastSpectrumOptions, overlays: [overlay], mode: lastSpectrumOptions.mode || 'fragments' }
+    : lastSpectrumOptions;
+  renderSpectrumPlot(
+    lastSpectrumState.mz,
+    lastSpectrumState.intensity,
+    lastSpectrumState.theoryMz,
+    lastSpectrumState.theoryInt,
+    options
+  );
+};
+
 const zoomSpectrumToRange = (minMz, maxMz) => {
   if (!Number.isFinite(minMz) || !Number.isFinite(maxMz) || minMz >= maxMz) {
     return;
@@ -1021,6 +1114,7 @@ const handleCoveragePopoverClick = (event) => {
   if (!group) return;
   const match = group.matches[matchIndex];
   if (!match) return;
+  focusSpectrumTheoryForMatch(match);
   zoomSpectrumToMatch(match);
   hideCoveragePopover();
 };
@@ -1038,9 +1132,16 @@ const setActiveResultRow = (row) => {
 const handleResultsRowClick = (event) => {
   const row = event.target.closest('tr');
   if (!row || !row.dataset) return;
-  const centerMz = toNumberOrNull(row.dataset.centerMz);
-  if (!Number.isFinite(centerMz)) return;
-  zoomSpectrumToMatch({ obsMz: centerMz, anchorMz: centerMz });
+  const matchIdx = Number(row.dataset.matchIdx);
+  const match = Number.isFinite(matchIdx) && Array.isArray(coverageRows) ? coverageRows[matchIdx] : null;
+  if (match) {
+    focusSpectrumTheoryForMatch(match);
+    zoomSpectrumToMatch(match);
+  } else {
+    const centerMz = toNumberOrNull(row.dataset.centerMz);
+    if (!Number.isFinite(centerMz)) return;
+    zoomSpectrumToMatch({ obsMz: centerMz, anchorMz: centerMz });
+  }
   setActiveResultRow(row);
   hideCoveragePopover();
 };

@@ -16,7 +16,7 @@ import numpy as np
 
 import personalized_config as cfg
 from personalized import load_spectrum, preprocess_spectrum
-from personalized_modes import run_charge_reduced_headless, run_fragments_headless, run_precursor_headless
+from personalized_modes import run_charge_reduced_headless, run_fragments_headless, run_precursor_headless, run_raw_headless
 from personalized_sequence import parse_custom_sequence
 
 
@@ -320,6 +320,18 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
     return overrides
 
 
+def _build_raw_overrides(req: FragmentsRunRequest, filepath: str) -> list[_CfgOverride]:
+    return [
+        _CfgOverride("filepath", filepath),
+        _CfgOverride("SCAN", int(req.scan)),
+        _CfgOverride("PLOT_MODE", "raw"),
+        _CfgOverride("PEPTIDE", req.peptide),
+        _CfgOverride("MZ_MIN", req.mz_min),
+        _CfgOverride("MZ_MAX", req.mz_max),
+        _CfgOverride("EXPORT_FRAGMENTS_CSV", False),
+    ]
+
+
 def _run_fragments_impl(
     req: FragmentsRunRequest,
     filepath_override: Optional[str] = None,
@@ -374,6 +386,7 @@ def _run_fragments_impl(
         ion_type_norm = _normalize_ion_type(str(m.get("ion_type", "")))
         frag_len = int(m.get("frag_len", 0) or 0)
         frag_index = _fragment_index(seq_len, ion_type_norm or "", frag_len)
+        theory_mz_row, theory_int_row = _theory_from_dist(m.get("dist"))
         fragments.append(
             {
                 "frag_id": m.get("frag_id", ""),
@@ -392,6 +405,8 @@ def _run_fragments_impl(
                 "rawcos": _safe_float(m.get("raw_score")),
                 "label": m.get("label", ""),
                 "variant_suffix": m.get("variant_suffix", ""),
+                "theory_mz": theory_mz_row,
+                "theory_intensity": theory_int_row,
             }
         )
 
@@ -459,6 +474,7 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
 
     candidates: list[dict[str, Any]] = []
     for cand in result.get("candidates", []) or []:
+        cand_theory_mz, cand_theory_int = _theory_from_dist(cand.get("dist"))
         candidates.append(
             {
                 "charge": int(cand.get("charge", 0) or 0),
@@ -468,6 +484,9 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
                 "css": _safe_float(cand.get("css")),
                 "accepted": bool(cand.get("accepted", False)),
                 "iteration": int(cand.get("iteration", 0) or 0),
+                "theory_mz": cand_theory_mz,
+                "theory_intensity": cand_theory_int,
+                "color": "#ef4444",
             }
         )
 
@@ -559,6 +578,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             int_vals = dist[:, 1].astype(float).tolist()
         else:
             mz_vals, int_vals = [], []
+        color_norm = _normalize_color(m.get("color"))
         anchor_mz = None
         ppm = None
         if isinstance(dist_full, np.ndarray) and dist_full.size:
@@ -572,7 +592,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
                 "label": m.get("label", ""),
                 "mz": mz_vals,
                 "intensity": int_vals,
-                "color": _normalize_color(m.get("color")),
+                "color": color_norm,
                 "charge": int(m.get("z", 0) or 0),
                 "state": m.get("state", ""),
                 "target": m.get("target", ""),
@@ -591,6 +611,9 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
                 "anchor_theory_mz": anchor_mz,
                 "ppm": _safe_float(ppm),
                 "css": _safe_float(m.get("css")),
+                "theory_mz": mz_vals,
+                "theory_intensity": int_vals,
+                "color": color_norm,
             }
         )
 
@@ -615,6 +638,71 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             "intensity": theory_int,
         },
     }
+
+
+def _run_raw_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
+    filepath = filepath_override or req.filepath
+    logger.info("run raw: scan=%s mz=[%s,%s]", req.scan, req.mz_min, req.mz_max)
+    overrides = _build_raw_overrides(req, filepath)
+    try:
+        with _override_cfg(overrides):
+            residues = parse_custom_sequence(cfg.PEPTIDE) if cfg.PEPTIDE else []
+            spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=True)
+            spectrum = preprocess_spectrum(spectrum)
+            result = run_raw_headless(spectrum)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    sequence_raw = cfg.PEPTIDE
+    sequence = "".join(aa for aa, _mods in residues) if residues else sequence_raw
+    spectrum_mz = np.asarray(result.get("spectrum_mz", []), dtype=float)
+    spectrum_int = np.asarray(result.get("spectrum_int", []), dtype=float)
+    spectrum_mz_ds, spectrum_int_ds = _downsample_xy(spectrum_mz, spectrum_int)
+
+    logger.info("run raw complete: points=%s", len(spectrum_mz_ds))
+
+    return {
+        "mode": "raw",
+        "sequence": sequence,
+        "sequence_raw": sequence_raw,
+        "scan": req.scan,
+        "count": 0,
+        "spectrum": {
+            "mz": spectrum_mz_ds,
+            "intensity": spectrum_int_ds,
+            "raw_points": int(spectrum_mz.size),
+            "points": len(spectrum_mz_ds),
+        },
+        "theory": {"mz": [], "intensity": []},
+    }
+
+
+@app.post("/api/run/raw")
+def run_raw(req: FragmentsRunRequest) -> dict[str, Any]:
+    return _run_raw_impl(req)
+
+
+@app.post("/api/run/raw/upload")
+async def run_raw_upload(file: UploadFile = File(...), payload: str = Form(...)) -> dict[str, Any]:
+    try:
+        payload_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from exc
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+        payload_data["filepath"] = temp_path
+        req = FragmentsRunRequest(**payload_data)
+        return _run_raw_impl(req, filepath_override=temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @app.post("/api/run/fragments")
