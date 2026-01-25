@@ -47,6 +47,9 @@ let coverageRows = null;
 let tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
 let manualFilePathOverride = false;
 let coverageGroupMap = new Map();
+let coveragePopoverHideTimer = null;
+let coveragePopoverActiveKey = null;
+let activeResultRow = null;
 
 const refreshTableRows = () => {
   tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
@@ -206,12 +209,15 @@ const updateResultsTable = (fragments) => {
     .map((frag) => {
       const ion = `${frag.ionType}${frag.fragLen}`;
       const mz = frag.obsMz != null ? frag.obsMz.toFixed(2) : '';
+      const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
       const intensity = frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '';
       const score = frag.css != null ? frag.css.toFixed(3) : '';
-      return `<tr>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      const centerAttr = Number.isFinite(centerMz) ? ` data-center-mz="${centerMz}"` : '';
+      return `<tr${centerAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
     })
     .join('');
+  activeResultRow = null;
   refreshTableRows();
   applyTableFilter();
   resultsSort.dispatchEvent(new Event('change'));
@@ -226,6 +232,8 @@ const applyFragments = (fragments, sequence) => {
     obsMz: frag.obs_mz,
     obsInt: frag.obs_int,
     css: frag.css,
+    anchorMz: frag.anchor_theory_mz,
+    anchorPpm: frag.anchor_ppm,
     label: frag.label,
   }));
   coverageRows = normalized;
@@ -582,6 +590,8 @@ const parseCoverageRows = (text) => {
       obsMz: toNumberOrNull(row.obs_mz),
       obsInt: toNumberOrNull(row.obs_int),
       css: toNumberOrNull(row.css),
+      anchorMz: toNumberOrNull(row.anchor_theory_mz),
+      anchorPpm: toNumberOrNull(row.anchor_ppm),
       label: row.label || '',
     }))
     .filter((row) => row.ionType && Number.isFinite(row.fragLen) && row.fragLen > 0);
@@ -648,6 +658,8 @@ const buildCoverageGroups = (length) => {
               obsMz: null,
               obsInt: null,
               css: 1,
+              anchorMz: null,
+              anchorPpm: null,
               label: '',
             },
           ],
@@ -684,6 +696,8 @@ const buildCoverageGroups = (length) => {
       obsMz: row.obsMz,
       obsInt: row.obsInt,
       css: row.css,
+      anchorMz: row.anchorMz,
+      anchorPpm: row.anchorPpm,
       label: row.label,
     });
   });
@@ -696,30 +710,146 @@ const buildCoverageGroups = (length) => {
   return { groupsByIonType, groupMap };
 };
 
+const getMatchCenterMz = (match) => (Number.isFinite(match.obsMz) ? match.obsMz : match.anchorMz);
+
 const buildPopoverHtml = (group) => {
   const title = `${group.ionType}${group.fragLen}`;
   const subtitle = `${group.matches.length} match${group.matches.length === 1 ? '' : 'es'}`;
   if (!group.matches.length) {
     return `<div class="popover-title">${escapeHtml(title)}</div><div class="popover-empty">No matches</div>`;
   }
+  const keyAttr = escapeHtml(group.key);
   const rows = group.matches
     .map(
-      (match, idx) =>
-        `<div class="popover-item"><span>#${idx + 1} ${escapeHtml(formatCharge(match.charge))}</span><span>css ${escapeHtml(
-          formatCss(match.css)
-        )} | m/z ${escapeHtml(formatMz(match.obsMz))}</span></div>`
+      (match, idx) => {
+        const centerMz = getMatchCenterMz(match);
+        const mzText = formatMz(centerMz);
+        const cssText = formatCss(match.css);
+        return `<button type="button" class="popover-item" data-key="${keyAttr}" data-match-index="${idx}"><span>#${idx + 1} ${escapeHtml(
+          formatCharge(match.charge)
+        )}</span><span>css ${escapeHtml(cssText)} | m/z ${escapeHtml(mzText)}</span></button>`;
+      }
     )
     .join('');
   const best = group.matches[0];
   const bestLine = `Best css ${formatCss(best.css)} | intensity ${formatIntensity(best.obsInt)}`;
+  const hint = 'Click a match to zoom spectrum';
   return `<div class="popover-title">${escapeHtml(title)}</div><div class="popover-subtitle">${escapeHtml(
     subtitle
-  )}</div><div class="popover-subtitle">${escapeHtml(bestLine)}</div><div class="popover-list">${rows}</div>`;
+  )}</div><div class="popover-subtitle">${escapeHtml(bestLine)}</div><div class="popover-subtitle">${escapeHtml(
+    hint
+  )}</div><div class="popover-list">${rows}</div>`;
+};
+
+const clearCoveragePopoverTimer = () => {
+  if (coveragePopoverHideTimer) {
+    clearTimeout(coveragePopoverHideTimer);
+    coveragePopoverHideTimer = null;
+  }
 };
 
 const hideCoveragePopover = () => {
   if (!coveragePopover) return;
+  clearCoveragePopoverTimer();
+  coveragePopoverActiveKey = null;
   coveragePopover.hidden = true;
+};
+
+const scheduleCoveragePopoverHide = (delay = 180) => {
+  if (!coveragePopover) return;
+  clearCoveragePopoverTimer();
+  coveragePopoverHideTimer = setTimeout(() => {
+    if (coveragePopover.matches(':hover')) {
+      return;
+    }
+    hideCoveragePopover();
+  }, delay);
+};
+
+const ZOOM_WIDTH_RATIO = 0.02;
+const ZOOM_WIDTH_MIN = 18;
+const ZOOM_WIDTH_MAX = 160;
+
+const computeZoomRange = (centerMz) => {
+  const width = clampValue(centerMz * ZOOM_WIDTH_RATIO, ZOOM_WIDTH_MIN, ZOOM_WIDTH_MAX);
+  const half = width / 2;
+  const min = Math.max(centerMz - half, 0);
+  const max = centerMz + half;
+  return [min, max];
+};
+
+const computeSpectrumMaxAbs = (minMz, maxMz) => {
+  const spectrumDiv = document.getElementById('spectrumPlot');
+  if (!spectrumDiv || !Array.isArray(spectrumDiv.data)) {
+    return 0;
+  }
+  let maxAbs = 0;
+  spectrumDiv.data.forEach((trace) => {
+    const xs = Array.isArray(trace.x) ? trace.x : [];
+    const ys = Array.isArray(trace.y) ? trace.y : [];
+    const n = Math.min(xs.length, ys.length);
+    for (let i = 0; i < n; i += 1) {
+      const xVal = xs[i];
+      const yVal = ys[i];
+      if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue;
+      if (xVal < minMz || xVal > maxMz) continue;
+      const absVal = Math.abs(yVal);
+      if (absVal > maxAbs) maxAbs = absVal;
+    }
+  });
+  return maxAbs;
+};
+
+const zoomSpectrumToMatch = (match) => {
+  const centerMz = getMatchCenterMz(match);
+  if (!Number.isFinite(centerMz)) {
+    return;
+  }
+  const [minMz, maxMz] = computeZoomRange(centerMz);
+  const maxAbs = computeSpectrumMaxAbs(minMz, maxMz) || 1;
+  const yPad = maxAbs * 1.15;
+  Plotly.relayout('spectrumPlot', {
+    'xaxis.range': [minMz, maxMz],
+    'yaxis.range': [-yPad, yPad],
+  });
+};
+
+const handleCoveragePopoverClick = (event) => {
+  if (!coveragePopover) return;
+  const item = event.target.closest('.popover-item');
+  if (!item) return;
+  event.preventDefault();
+  const key = item.dataset.key || coveragePopoverActiveKey;
+  const matchIndex = Number(item.dataset.matchIndex);
+  if (!key || !Number.isFinite(matchIndex)) {
+    return;
+  }
+  const group = coverageGroupMap.get(String(key));
+  if (!group) return;
+  const match = group.matches[matchIndex];
+  if (!match) return;
+  zoomSpectrumToMatch(match);
+  hideCoveragePopover();
+};
+
+const setActiveResultRow = (row) => {
+  if (activeResultRow && activeResultRow !== row) {
+    activeResultRow.classList.remove('is-active');
+  }
+  activeResultRow = row;
+  if (activeResultRow) {
+    activeResultRow.classList.add('is-active');
+  }
+};
+
+const handleResultsRowClick = (event) => {
+  const row = event.target.closest('tr');
+  if (!row || !row.dataset) return;
+  const centerMz = toNumberOrNull(row.dataset.centerMz);
+  if (!Number.isFinite(centerMz)) return;
+  zoomSpectrumToMatch({ obsMz: centerMz, anchorMz: centerMz });
+  setActiveResultRow(row);
+  hideCoveragePopover();
 };
 
 const positionCoveragePopover = (gd, point, dir) => {
@@ -763,6 +893,8 @@ const showCoveragePopover = (gd, point) => {
     hideCoveragePopover();
     return;
   }
+  clearCoveragePopoverTimer();
+  coveragePopoverActiveKey = String(key);
   coveragePopover.innerHTML = buildPopoverHtml(group);
   coveragePopover.hidden = false;
   const dir = group.ionType === 'b' || group.ionType === 'c' ? 1 : -1;
@@ -781,9 +913,19 @@ const attachCoverageHoverHandlers = (gd) => {
     if (!point?.customdata) return;
     showCoveragePopover(gd, point);
   });
-  gd.on('plotly_unhover', hideCoveragePopover);
+  gd.on('plotly_unhover', () => scheduleCoveragePopoverHide());
   gd.on('plotly_doubleclick', hideCoveragePopover);
 };
+
+if (coveragePopover) {
+  coveragePopover.addEventListener('mouseenter', clearCoveragePopoverTimer);
+  coveragePopover.addEventListener('mouseleave', () => scheduleCoveragePopoverHide(60));
+  coveragePopover.addEventListener('click', handleCoveragePopoverClick);
+}
+
+if (resultsTable) {
+  resultsTable.addEventListener('click', handleResultsRowClick);
+}
 
 const buildFragShape = (positions, index, length, ionType, fragLenOverride) => {
   const step = positions[index + 1] - positions[index];

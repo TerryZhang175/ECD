@@ -533,6 +533,16 @@ tbody tr:hover {
   background: rgba(59, 130, 246, 0.08);
 }
 
+tbody tr[data-center-mz] {
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+tbody tr.is-active {
+  background: rgba(14, 165, 233, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.25);
+}
+
 .table-filter,
 .table-sort {
   border-radius: 999px;
@@ -559,7 +569,7 @@ tbody tr:hover {
   font-size: 12px;
   color: #0f172a;
   z-index: 6;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .coverage-popover[hidden] {
@@ -587,6 +597,29 @@ tbody tr:hover {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.coverage-popover .popover-item:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.coverage-popover .popover-item:active {
+  transform: translateY(0.5px);
+}
+
+.coverage-popover .popover-item:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 1px;
 }
 
 .coverage-popover .popover-item span:last-child {
