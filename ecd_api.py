@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import re
 import tempfile
 import logging
@@ -11,6 +12,8 @@ from typing import Any, Iterable, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import numpy as np
 
@@ -21,6 +24,10 @@ from personalized_sequence import parse_custom_sequence
 
 
 app = FastAPI(title="ECD Analyzer API", version="0.1.0")
+_UI_DIR = Path(__file__).parent / "ui"
+if _UI_DIR.exists():
+    # Serve the UI from the same origin as the API (http://127.0.0.1:8001/ui/).
+    app.mount("/ui", StaticFiles(directory=str(_UI_DIR), html=True), name="ui")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ecd_api")
@@ -33,6 +40,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/ui/")
 
 
 def _normalize_ion_type(value: Optional[str]) -> Optional[str]:
