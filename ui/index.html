@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ECD Analyzer UI</title>
+    <link rel="stylesheet" href="styles.css?v=20260125-1" />
+    <script defer src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script defer src="app.js?v=20260125-4"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">ECD</div>
+          <div>
+            <div class="brand-title">ECD Analyzer</div>
+            <div class="brand-subtitle">Electron Capture Dissociation Workspace</div>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <div class="meta-item">
+            <span class="meta-label">Session</span>
+            <span class="meta-value" id="sessionTime">00:00:00</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Status</span>
+            <span class="status-pill status-idle" id="statusPill">Idle</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="controls">
+          <section class="panel run-panel" style="--delay: 0ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 5l12 7-12 7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                </svg>
+                <h2>Run Control</h2>
+              </div>
+              <span class="badge">MVP</span>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="button primary" id="runButton" type="button">Run Analysis</button>
+                <button class="button ghost" id="stopButton" type="button">Stop</button>
+              </div>
+              <div class="progress">
+                <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+              </div>
+              <div class="meta-grid">
+                <div>
+                  <span class="meta-label">Elapsed</span>
+                  <span class="meta-value" id="elapsedTime">00:00</span>
+                </div>
+                <div>
+                  <span class="meta-label">Warnings</span>
+                  <span class="meta-value" id="warningCount">0</span>
+                </div>
+              </div>
+              <div class="warning-list" id="warningList">
+                <div class="warning-item">Load a data file to begin.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="--delay: 80ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3.5 7.5h6l2 2H20.5a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H4.5a2 2 0 0 1-2-2v-10a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                </svg>
+                <h2>Data Input</h2>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="filePath">File path</label>
+                <div class="input-row">
+                  <input id="filePath" type="text" placeholder="/path/to/scan.txt" />
+                  <button class="button ghost" id="fileBrowse" type="button">Browse</button>
+                  <input id="fileInput" type="file" accept=".txt" hidden />
+                </div>
+                <div class="helper" id="fileStatus">No file loaded</div>
+              </div>
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="scanSelect">Scan</label>
+                  <input id="scanSelect" type="number" min="1" value="1" />
+                </div>
+                <div class="field">
+                  <label for="modeSelect">Mode</label>
+                  <select id="modeSelect">
+                    <option value="precursor">Precursor</option>
+                    <option value="charge_reduced">Charge reduced</option>
+                    <option value="fragments" selected>Fragments</option>
+                    <option value="complex_fragments">Complex fragments</option>
+                    <option value="diagnose">Diagnose</option>
+                    <option value="raw">Raw</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="mzMin">m/z min</label>
+                  <input id="mzMin" type="number" value="400" />
+                </div>
+                <div class="field">
+                  <label for="mzMax">m/z max</label>
+                  <input id="mzMax" type="number" value="2000" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="--delay: 160ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8.5 12a3.5 3.5 0 0 1 0-5l2-2a3.5 3.5 0 0 1 5 5l-1 1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M15.5 12a3.5 3.5 0 0 1 0 5l-2 2a3.5 3.5 0 0 1-5-5l1-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <h2>Sequence & Chemistry</h2>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="peptide">Peptide sequence</label>
+                <input id="peptide" type="text" placeholder="PEPTIDE" value="PEPTIDE" />
+              </div>
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="copies">Copies</label>
+                  <input id="copies" type="number" min="1" value="1" />
+                </div>
+                <label class="switch-row">
+                  <span>Amidated</span>
+                  <span class="switch">
+                    <input id="amidated" type="checkbox" />
+                    <span class="slider"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="disulfideBonds">Disulfide bonds</label>
+                  <input id="disulfideBonds" type="number" min="0" value="0" />
+                </div>
+                <div class="field">
+                  <label for="disulfideMap">Disulfide map</label>
+                  <input id="disulfideMap" type="text" placeholder="1-4, 2-5" />
+                </div>
+              </div>
+              <div class="field">
+                <label>Ion types</label>
+                <div class="chip-group" role="group" aria-label="Ion types">
+                  <label class="chip">
+                    <input type="checkbox" checked />
+                    <span>b</span>
+                  </label>
+                  <label class="chip">
+                    <input type="checkbox" checked />
+                    <span>y</span>
+                  </label>
+                  <label class="chip">
+                    <input type="checkbox" checked />
+                    <span>c</span>
+                  </label>
+                  <label class="chip">
+                    <input type="checkbox" checked />
+                    <span>z*</span>
+                  </label>
+                </div>
+              </div>
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="fragMinCharge">Frag min charge</label>
+                  <input id="fragMinCharge" type="number" min="1" value="1" />
+                </div>
+                <div class="field">
+                  <label for="fragMaxCharge">Frag max charge</label>
+                  <input id="fragMaxCharge" type="number" min="1" value="4" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="--delay: 240ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <path d="M12 5v2M12 17v2M5 12h2M17 12h2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <h2>Matching Thresholds</h2>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field-row two-col">
+                <div class="field">
+                  <label for="matchTol">Match tol (ppm)</label>
+                  <input id="matchTol" type="number" min="1" value="10" />
+                </div>
+                <div class="field">
+                  <label for="minCosine">Min cosine</label>
+                  <div class="range-row">
+                    <input id="minCosine" type="range" min="0" max="1" step="0.01" value="0.7" />
+                    <output id="cosineValue">0.70</output>
+                  </div>
+                </div>
+              </div>
+              <label class="switch-row">
+                <span>IsoDec rules</span>
+                <span class="switch">
+                  <input id="isoDec" type="checkbox" checked />
+                  <span class="slider"></span>
+                </span>
+              </label>
+              <label class="switch-row">
+                <span>H-transfer</span>
+                <span class="switch">
+                  <input id="hTransfer" type="checkbox" checked />
+                  <span class="slider"></span>
+                </span>
+              </label>
+              <label class="switch-row">
+                <span>Neutral loss</span>
+                <span class="switch">
+                  <input id="neutralLoss" type="checkbox" />
+                  <span class="slider"></span>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel" style="--delay: 320ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                  <path d="M8 9l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <h2>Export</h2>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="button ghost" type="button">CSV Summary</button>
+                <button class="button ghost" type="button">CSV Peaks</button>
+              </div>
+              <div class="button-row">
+                <button class="button ghost" type="button">Export PNG</button>
+                <button class="button ghost" type="button">Export SVG</button>
+              </div>
+            </div>
+          </section>
+
+          <details class="panel" style="--delay: 400ms;">
+            <summary class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <path d="M4 10h16M9 5v14M15 5v14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <h2>Diagnose (Phase 2)</h2>
+              </div>
+              <span class="badge ghost">Optional</span>
+            </summary>
+            <div class="panel-body">
+              <div class="field">
+                <label for="diagnoseSpec">Diagnose ion spec</label>
+                <input id="diagnoseSpec" type="text" placeholder="C5H9NO3+" />
+              </div>
+              <div class="helper">Enable step-by-step scoring once diagnostics are loaded.</div>
+            </div>
+          </details>
+        </aside>
+
+        <section class="visuals">
+          <section class="panel plot-panel" style="--delay: 120ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 17l5-5 3 3 6-7 2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M4 19h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <h2>Spectrum Overlay</h2>
+              </div>
+              <div class="panel-actions">
+                <button class="button ghost" id="spectrumResetButton" type="button">Reset view</button>
+                <button class="button ghost" id="spectrumZoomButton" type="button">Zoom precursor</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="plot" id="spectrumPlot"></div>
+            </div>
+          </section>
+
+          <section class="panel plot-panel" style="--delay: 200ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 17l5-5 3 3 6-7 2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M4 19h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <h2>Fragment Coverage</h2>
+              </div>
+              <div class="panel-actions">
+                <button class="button ghost" id="coverageLoadButton" type="button">Load fragments CSV</button>
+                <input id="coverageFile" type="file" accept=".csv" hidden />
+                <span class="helper coverage-status" id="coverageStatus">Demo data</span>
+                <span class="badge">Plotly</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="plot" id="coveragePlot"></div>
+              <div class="coverage-popover" id="coveragePopover" hidden></div>
+            </div>
+          </section>
+
+          <section class="panel results-panel" style="--delay: 280ms;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <path d="M4 10h16M9 5v14M15 5v14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <h2>Results Table</h2>
+              </div>
+              <div class="panel-actions">
+                <input class="table-filter" id="resultsFilter" type="search" placeholder="Filter fragments" />
+                <select class="table-sort" id="resultsSort">
+                  <option value="score">Sort by score</option>
+                  <option value="mz">Sort by m/z</option>
+                  <option value="charge">Sort by charge</option>
+                </select>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="table-wrap">
+                <table id="resultsTable">
+                  <thead>
+                    <tr>
+                      <th>Ion</th>
+                      <th>m/z</th>
+                      <th>Charge</th>
+                      <th>Intensity</th>
+                      <th>Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>c5</td>
+                      <td>623.24</td>
+                      <td>2+</td>
+                      <td>18,220</td>
+                      <td>0.93</td>
+                    </tr>
+                    <tr>
+                      <td>z7*</td>
+                      <td>711.02</td>
+                      <td>1+</td>
+                      <td>12,890</td>
+                      <td>0.90</td>
+                    </tr>
+                    <tr>
+                      <td>c9</td>
+                      <td>988.44</td>
+                      <td>2+</td>
+                      <td>10,540</td>
+                      <td>0.87</td>
+                    </tr>
+                    <tr>
+                      <td>z10</td>
+                      <td>1022.31</td>
+                      <td>3+</td>
+                      <td>9,420</td>
+                      <td>0.84</td>
+                    </tr>
+                    <tr>
+                      <td>c11*</td>
+                      <td>1189.77</td>
+                      <td>2+</td>
+                      <td>7,910</td>
+                      <td>0.81</td>
+                    </tr>
+                    <tr>
+                      <td>z13</td>
+                      <td>1392.10</td>
+                      <td>1+</td>
+                      <td>6,320</td>
+                      <td>0.78</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
