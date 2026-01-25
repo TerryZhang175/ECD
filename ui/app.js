@@ -225,7 +225,7 @@ const updateResultsTable = (fragments) => {
   resultsSort.dispatchEvent(new Event('change'));
 };
 
-const applyFragments = (fragments, sequence) => {
+const applyFragments = (fragments, sequence, mode = 'fragments') => {
   const normalized = fragments.map((frag) => ({
     ionType: frag.ion_type,
     fragLen: frag.frag_len,
@@ -242,7 +242,8 @@ const applyFragments = (fragments, sequence) => {
   if (sequence && sequence !== peptideInput.value) {
     peptideInput.value = sequence;
   }
-  setCoverageStatus(`Run: ${normalized.length} fragments`);
+  const statusPrefix = mode === 'complex_fragments' ? 'Complex fragments' : 'Fragments';
+  setCoverageStatus(`${statusPrefix}: ${normalized.length}`);
   updateResultsTable(normalized);
   rerenderCoverage();
 };
@@ -355,6 +356,7 @@ const startRun = async () => {
     const mode = modeSelect ? modeSelect.value : 'fragments';
     const isPrecursor = mode === 'precursor';
     const isChargeReduced = mode === 'charge_reduced';
+    const isComplexFragments = mode === 'complex_fragments';
     const payload = {
       filepath: filepathValue,
       scan: scanSelect ? Number(scanSelect.value) : 1,
@@ -387,12 +389,16 @@ const startRun = async () => {
       ? '/api/run/precursor'
       : isChargeReduced
         ? '/api/run/charge_reduced'
-        : '/api/run/fragments';
+        : isComplexFragments
+          ? '/api/run/complex_fragments'
+          : '/api/run/fragments';
     const runUploadPath = isPrecursor
       ? '/api/run/precursor/upload'
       : isChargeReduced
         ? '/api/run/charge_reduced/upload'
-        : '/api/run/fragments/upload';
+        : isComplexFragments
+          ? '/api/run/complex_fragments/upload'
+          : '/api/run/fragments/upload';
 
     let response;
     if (useUpload && selectedFile) {
@@ -419,6 +425,7 @@ const startRun = async () => {
     const data = await response.json();
     const isPrecursorMode = isPrecursor || data.mode === 'precursor';
     const isChargeReducedMode = isChargeReduced || data.mode === 'charge_reduced';
+    const isComplexFragmentsMode = isComplexFragments || data.mode === 'complex_fragments';
 
     const parsePlotWindow = (window) => {
       if (!window || typeof window !== 'object') return null;
@@ -449,10 +456,13 @@ const startRun = async () => {
       setWarnings(count === 0 ? ['No charge-reduced matches found.'] : []);
     } else {
       lastPrecursorWindow = null;
-      applyFragments(data.fragments || [], data.sequence);
+      applyFragments(data.fragments || [], data.sequence, isComplexFragmentsMode ? 'complex_fragments' : 'fragments');
       applySpectrum(data.spectrum, data.theory);
       const count = Number(data.count || 0);
-      setWarnings(count === 0 ? ['No fragments matched. Check sequence and parameters.'] : []);
+      const emptyMessage = isComplexFragmentsMode
+        ? 'No complex fragments matched. Check sequence and parameters.'
+        : 'No fragments matched. Check sequence and parameters.';
+      setWarnings(count === 0 ? [emptyMessage] : []);
     }
     progress = 100;
     progressBar.style.width = '100%';

@@ -209,13 +209,13 @@ def get_config() -> dict[str, Any]:
     }
 
 
-def _build_overrides(req: FragmentsRunRequest, filepath: str) -> list[_CfgOverride]:
+def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "fragments") -> list[_CfgOverride]:
     disulfide_map = _parse_disulfide_map(req.disulfide_map)
     ion_types = tuple(req.ion_types) if req.ion_types else tuple(cfg.ION_TYPES)
     overrides = [
         _CfgOverride("filepath", filepath),
         _CfgOverride("SCAN", int(req.scan)),
-        _CfgOverride("PLOT_MODE", "fragments"),
+        _CfgOverride("PLOT_MODE", str(plot_mode)),
         _CfgOverride("PEPTIDE", req.peptide),
         _CfgOverride("MZ_MIN", req.mz_min),
         _CfgOverride("MZ_MAX", req.mz_max),
@@ -320,11 +320,17 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
     return overrides
 
 
-def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
+def _run_fragments_impl(
+    req: FragmentsRunRequest,
+    filepath_override: Optional[str] = None,
+    plot_mode: str = "fragments",
+) -> dict[str, Any]:
     filepath = filepath_override or req.filepath
+    plot_mode = str(plot_mode or "fragments").lower()
     css_thresh = req.isodec_css_thresh if req.isodec_css_thresh is not None else req.min_cosine
     logger.info(
-        "run fragments: scan=%s tol_ppm=%s css_thresh=%s ions=%s mz=[%s,%s] charge=[%s,%s]",
+        "run %s: scan=%s tol_ppm=%s css_thresh=%s ions=%s mz=[%s,%s] charge=[%s,%s]",
+        plot_mode,
         req.scan,
         req.match_tol_ppm,
         css_thresh,
@@ -334,7 +340,7 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         req.frag_min_charge,
         req.frag_max_charge,
     )
-    overrides = _build_overrides(req, filepath)
+    overrides = _build_overrides(req, filepath, plot_mode=plot_mode)
     precursor_result = None
     try:
         with _override_cfg(overrides):
@@ -353,7 +359,7 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    logger.info("run fragments complete: count=%s", len(result.get("best", []) or []))
+    logger.info("run %s complete: count=%s", plot_mode, len(result.get("best", []) or []))
 
     sequence_raw = cfg.PEPTIDE
     sequence = "".join(aa for aa, _mods in residues)
@@ -401,6 +407,7 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
             "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
         }
     return {
+        "mode": plot_mode,
         "sequence": sequence,
         "sequence_raw": sequence_raw,
         "scan": req.scan,
@@ -612,7 +619,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
 
 @app.post("/api/run/fragments")
 def run_fragments(req: FragmentsRunRequest) -> dict[str, Any]:
-    return _run_fragments_impl(req)
+    return _run_fragments_impl(req, plot_mode="fragments")
 
 
 @app.post("/api/run/fragments/upload")
@@ -630,7 +637,33 @@ async def run_fragments_upload(file: UploadFile = File(...), payload: str = Form
             tmp.write(await file.read())
         payload_data["filepath"] = temp_path
         req = FragmentsRunRequest(**payload_data)
-        return _run_fragments_impl(req, filepath_override=temp_path)
+        return _run_fragments_impl(req, filepath_override=temp_path, plot_mode="fragments")
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.post("/api/run/complex_fragments")
+def run_complex_fragments(req: FragmentsRunRequest) -> dict[str, Any]:
+    return _run_fragments_impl(req, plot_mode="complex_fragments")
+
+
+@app.post("/api/run/complex_fragments/upload")
+async def run_complex_fragments_upload(file: UploadFile = File(...), payload: str = Form(...)) -> dict[str, Any]:
+    try:
+        payload_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from exc
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+        payload_data["filepath"] = temp_path
+        req = FragmentsRunRequest(**payload_data)
+        return _run_fragments_impl(req, filepath_override=temp_path, plot_mode="complex_fragments")
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
