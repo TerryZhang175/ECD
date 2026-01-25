@@ -46,7 +46,7 @@ def run_raw_mode(spectrum) -> None:
     plot_overlay(spectrum, [], mz_min=None, mz_max=None)
 
 
-def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
+def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
     complex_comp = get_precursor_composition(residues)
     precursor_theories: dict[int, dict] = {}
 
@@ -63,7 +63,20 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
 
     if not precursor_theories:
         print("No precursor theories generated; check composition and charge range.")
-        return spectrum
+        return {
+            "spectrum": np.array(spectrum, dtype=float, copy=True),
+            "spectrum_mz": np.asarray(spectrum[:, 0], dtype=float),
+            "spectrum_int": np.asarray(spectrum[:, 1], dtype=float),
+            "match_found": False,
+            "best_z": None,
+            "best_css": 0.0,
+            "shift_ppm": 0.0,
+            "best_obs_mz": None,
+            "best_theory_mz": None,
+            "best_theory_dist": None,
+            "plot_window": None,
+            "candidates": [],
+        }
 
     work_spectrum = np.array(spectrum, dtype=float, copy=True)
     match_found = False
@@ -71,6 +84,9 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
     best_css = 0.0
     shift_ppm = 0.0
     best_obs_mz = None
+    best_theory_mz = None
+    best_theory_dist = None
+    best_by_charge: dict[int, dict] = {}
 
     print(f"--- Starting Precursor Search (Max iterations: {int(cfg.PRECURSOR_SEARCH_ITERATIONS)}) ---")
 
@@ -98,6 +114,7 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
 
         for z in candidate_charges:
             dist = precursor_theories[z]["dist"]
+            theory_mz = float(precursor_theories[z]["anchor_mz"])
             if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
                 accepted, isodec_css, shifted_peak = isodec_css_and_accept(
                     local_centroids, dist, z=z, peakmz=obs_mz, config=isodec_config
@@ -116,12 +133,27 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
                 isodec_css = css_similarity(y_obs, dist[:, 1])
                 accepted = isodec_css >= float(cfg.MIN_COSINE)
 
+            ppm = ((float(obs_mz) - theory_mz) / theory_mz) * 1e6
+            candidate = {
+                "charge": int(z),
+                "obs_mz": float(obs_mz),
+                "anchor_theory_mz": theory_mz,
+                "ppm": float(ppm),
+                "css": float(isodec_css),
+                "accepted": bool(accepted),
+                "iteration": int(iteration),
+            }
+            prev = best_by_charge.get(int(z))
+            if prev is None or float(candidate["css"]) > float(prev.get("css", -1.0)):
+                best_by_charge[int(z)] = candidate
+
             if accepted and isodec_css >= float(cfg.MIN_COSINE):
                 match_found = True
                 best_z = int(z)
                 best_css = float(isodec_css)
                 best_obs_mz = float(obs_mz)
-                theory_mz = float(precursor_theories[z]["anchor_mz"])
+                best_theory_mz = float(theory_mz)
+                best_theory_dist = dist
                 shift_ppm = ((best_obs_mz - theory_mz) / theory_mz) * 1e6
                 break
 
@@ -140,19 +172,182 @@ def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
     if match_found and bool(cfg.ENABLE_LOCK_MASS):
         print(f"Applying lock-mass calibration: shift {-shift_ppm:.2f} ppm")
         calibrated_spectrum[:, 0] = calibrated_spectrum[:, 0] / (1.0 + (shift_ppm / 1e6))
-
-        theory_dist = precursor_theories[best_z]["dist"]
-        label = f"Precursor {best_z}+ (css={best_css:.3f}, shift {-shift_ppm:.2f} ppm)"
-        plot_overlay(
-            calibrated_spectrum,
-            [(theory_dist, "tab:red", label)],
-            mz_min=float(theory_dist[0, 0]) - 5,
-            mz_max=float(theory_dist[-1, 0]) + 5,
-        )
     elif not match_found:
         print("Precursor not found; no calibration applied.")
 
+    candidates = sorted(best_by_charge.values(), key=lambda d: float(d.get("css", -1.0)), reverse=True)
+    plot_window = None
+    if best_theory_dist is not None and isinstance(best_theory_dist, np.ndarray) and best_theory_dist.size:
+        plot_window = (float(best_theory_dist[0, 0]) - 5.0, float(best_theory_dist[-1, 0]) + 5.0)
+
+    return {
+        "spectrum": calibrated_spectrum,
+        "spectrum_mz": np.asarray(calibrated_spectrum[:, 0], dtype=float),
+        "spectrum_int": np.asarray(calibrated_spectrum[:, 1], dtype=float),
+        "match_found": bool(match_found),
+        "best_z": best_z,
+        "best_css": float(best_css),
+        "shift_ppm": float(shift_ppm),
+        "best_obs_mz": best_obs_mz,
+        "best_theory_mz": best_theory_mz,
+        "best_theory_dist": best_theory_dist,
+        "plot_window": plot_window,
+        "candidates": candidates,
+    }
+
+
+def run_precursor_mode(residues, spectrum, isodec_config) -> np.ndarray:
+    result = run_precursor_headless(residues, spectrum, isodec_config)
+    calibrated_spectrum = np.asarray(result.get("spectrum"), dtype=float)
+    match_found = bool(result.get("match_found"))
+    best_theory_dist = result.get("best_theory_dist")
+    best_z = result.get("best_z")
+    best_css = float(result.get("best_css", 0.0) or 0.0)
+    shift_ppm = float(result.get("shift_ppm", 0.0) or 0.0)
+
+    if match_found and bool(cfg.ENABLE_LOCK_MASS) and isinstance(best_theory_dist, np.ndarray) and best_theory_dist.size:
+        label = f"Precursor {best_z}+ (css={best_css:.3f}, shift {-shift_ppm:.2f} ppm)"
+        window = result.get("plot_window")
+        mz_min = float(window[0]) if window else float(best_theory_dist[0, 0]) - 5.0
+        mz_max = float(window[1]) if window else float(best_theory_dist[-1, 0]) + 5.0
+        plot_overlay(
+            calibrated_spectrum,
+            [(best_theory_dist, "tab:red", label)],
+            mz_min=mz_min,
+            mz_max=mz_max,
+        )
+
     return calibrated_spectrum
+
+
+def run_charge_reduced_headless(residues, spectrum, isodec_config) -> dict:
+    spectrum_mz = spectrum[:, 0]
+    spectrum_int = spectrum[:, 1]
+    obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
+
+    targets: dict[str, tuple[object, str]] = {}
+    monomer_comp = get_neutral_monomer_composition(residues)
+    targets["Monomer"] = (monomer_comp, "tab:blue")
+    if int(cfg.COPIES) > 1:
+        complex_comp = get_precursor_composition(residues)
+        targets[f"Complex ({int(cfg.COPIES)}x)"] = (complex_comp, "tab:red")
+
+    matches: list[dict] = []
+    print("--- Starting Charge-Reduced Precursor Search (data-driven anchor) ---")
+
+    state_shifts = [
+        ("0", 0),
+        ("+H", 1),
+        ("+2H", 2),
+        ("-H", -1),
+        ("-2H", -2),
+    ]
+
+    for label, (target_comp, color) in targets.items():
+        for z in range(int(cfg.CR_MIN_CHARGE), int(cfg.CR_MAX_CHARGE) + 1):
+            try:
+                dist0 = theoretical_isodist_from_comp(target_comp, z)
+            except ValueError:
+                continue
+            if dist0.size == 0:
+                continue
+
+            theory_base_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+            window_mask = (spectrum_mz >= theory_base_mz - 2.0) & (spectrum_mz <= theory_base_mz + 2.0)
+            if not np.any(window_mask):
+                continue
+            window_idx = np.where(window_mask)[0]
+            obs_anchor_mz = float(spectrum_mz[window_idx[np.argmax(spectrum_int[window_idx])]])
+
+            local_centroids = get_local_centroids_window(
+                spectrum_mz, spectrum_int, center_mz=obs_anchor_mz, lb=-3.0, ub=3.0
+            )
+            if not isinstance(local_centroids, np.ndarray) or local_centroids.size == 0:
+                continue
+            cent_mz = local_centroids[:, 0]
+            cent_int = local_centroids[:, 1]
+
+            best_candidate = None
+            for state, h_shift in state_shifts:
+                dist = dist0.copy()
+                dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+
+                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                    accepted, css, shifted_peak = isodec_css_and_accept(
+                        local_centroids, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                    )
+                else:
+                    y_obs = observed_intensities_isodec(
+                        cent_mz,
+                        cent_int,
+                        dist[:, 0],
+                        z=int(z),
+                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        peak_mz=obs_anchor_mz,
+                    )
+                    css = css_similarity(y_obs, dist[:, 1])
+                    accepted = css >= float(cfg.MIN_COSINE)
+                    shifted_peak = None
+
+                if not accepted or css < float(cfg.MIN_COSINE):
+                    continue
+
+                obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
+                obs_idx = nearest_peak_index(cent_mz, obs_mz)
+                obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+
+                dist_full = dist.copy()
+                dist_plot = dist.copy()
+                max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
+                if max_plot > 0 and obs_int > 0:
+                    dist_plot[:, 1] *= obs_int / max_plot
+                keep = (
+                    dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF)
+                    if max_plot > 0
+                    else dist_plot[:, 1] > 0
+                )
+                dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+
+                theory_matches = match_theory_peaks(
+                    cent_mz,
+                    cent_int,
+                    dist_full[:, 0],
+                    tol_ppm=float(cfg.MATCH_TOL_PPM),
+                    theory_int=dist_full[:, 1],
+                )
+
+                candidate = {
+                    "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
+                    "target": label,
+                    "z": int(z),
+                    "state": state,
+                    "css": float(css),
+                    "obs_mz": obs_mz,
+                    "obs_int": obs_int,
+                    "dist_full": dist_full,
+                    "dist": dist_plot,
+                    "theory_matches": theory_matches,
+                    "color": color,
+                }
+
+                if best_candidate is None or candidate["css"] > best_candidate["css"]:
+                    best_candidate = candidate
+
+            if best_candidate is not None:
+                matches.append(best_candidate)
+
+    matches.sort(key=lambda x: (x["css"], x["obs_int"]), reverse=True)
+    print(f"Identified {len(matches)} charge-reduced forms:")
+    for m in matches:
+        print(f"  {m['label']} at m/z {m['obs_mz']:.3f} (I={m['obs_int']:.1f})")
+
+    return {
+        "spectrum": np.array(spectrum, dtype=float, copy=True),
+        "spectrum_mz": np.asarray(spectrum_mz, dtype=float),
+        "spectrum_int": np.asarray(spectrum_int, dtype=float),
+        "obs_max": obs_max,
+        "matches": matches,
+    }
 
 
 def run_charge_reduced_mode(residues, spectrum, isodec_config) -> None:

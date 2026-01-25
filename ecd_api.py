@@ -16,7 +16,7 @@ import numpy as np
 
 import personalized_config as cfg
 from personalized import load_spectrum, preprocess_spectrum
-from personalized_modes import run_fragments_headless
+from personalized_modes import run_charge_reduced_headless, run_fragments_headless, run_precursor_headless
 from personalized_sequence import parse_custom_sequence
 
 
@@ -121,6 +121,23 @@ def _extract_theory_peaks(best: list[dict[str, Any]], max_per_fragment: int = 8)
             peaks[key] = max(peaks.get(key, 0.0), int_val)
     mz_sorted = sorted(peaks.keys())
     return mz_sorted, [peaks[mz] for mz in mz_sorted]
+
+
+def _theory_from_dist(dist: Any) -> tuple[list[float], list[float]]:
+    if not isinstance(dist, np.ndarray) or dist.size == 0:
+        return [], []
+    return dist[:, 0].astype(float).tolist(), dist[:, 1].astype(float).tolist()
+
+
+def _normalize_color(value: Optional[str]) -> str:
+    color = (value or "").strip().lower()
+    mapping = {
+        "tab:blue": "#1f77b4",
+        "tab:red": "#d62728",
+        "tab:orange": "#ff7f0e",
+        "tab:green": "#2ca02c",
+    }
+    return mapping.get(color, value or "#0f172a")
 
 
 @dataclass
@@ -233,6 +250,76 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str) -> list[_CfgOverri
     return overrides
 
 
+def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[_CfgOverride]:
+    disulfide_map = _parse_disulfide_map(req.disulfide_map)
+    overrides = [
+        _CfgOverride("filepath", filepath),
+        _CfgOverride("SCAN", int(req.scan)),
+        _CfgOverride("PLOT_MODE", "precursor"),
+        _CfgOverride("PEPTIDE", req.peptide),
+        _CfgOverride("MZ_MIN", req.mz_min),
+        _CfgOverride("MZ_MAX", req.mz_max),
+        _CfgOverride("EXPORT_FRAGMENTS_CSV", False),
+    ]
+    if req.match_tol_ppm is not None:
+        overrides.append(_CfgOverride("MATCH_TOL_PPM", float(req.match_tol_ppm)))
+    if req.min_cosine is not None:
+        overrides.append(_CfgOverride("MIN_COSINE", float(req.min_cosine)))
+    css_thresh = req.isodec_css_thresh if req.isodec_css_thresh is not None else req.min_cosine
+    if css_thresh is not None:
+        overrides.append(_CfgOverride("ISODEC_CSS_THRESH", float(css_thresh)))
+    if req.frag_min_charge is not None:
+        overrides.append(_CfgOverride("PRECURSOR_MIN_CHARGE", int(req.frag_min_charge)))
+    if req.frag_max_charge is not None:
+        overrides.append(_CfgOverride("PRECURSOR_MAX_CHARGE", int(req.frag_max_charge)))
+    if req.copies is not None:
+        overrides.append(_CfgOverride("COPIES", int(req.copies)))
+    if req.amidated is not None:
+        overrides.append(_CfgOverride("AMIDATED", bool(req.amidated)))
+    if req.disulfide_bonds is not None:
+        overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
+    if disulfide_map:
+        overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.enable_isodec_rules is not None:
+        overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    return overrides
+
+
+def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> list[_CfgOverride]:
+    disulfide_map = _parse_disulfide_map(req.disulfide_map)
+    overrides = [
+        _CfgOverride("filepath", filepath),
+        _CfgOverride("SCAN", int(req.scan)),
+        _CfgOverride("PLOT_MODE", "charge_reduced"),
+        _CfgOverride("PEPTIDE", req.peptide),
+        _CfgOverride("MZ_MIN", req.mz_min),
+        _CfgOverride("MZ_MAX", req.mz_max),
+        _CfgOverride("EXPORT_FRAGMENTS_CSV", False),
+    ]
+    if req.match_tol_ppm is not None:
+        overrides.append(_CfgOverride("MATCH_TOL_PPM", float(req.match_tol_ppm)))
+    if req.min_cosine is not None:
+        overrides.append(_CfgOverride("MIN_COSINE", float(req.min_cosine)))
+    css_thresh = req.isodec_css_thresh if req.isodec_css_thresh is not None else req.min_cosine
+    if css_thresh is not None:
+        overrides.append(_CfgOverride("ISODEC_CSS_THRESH", float(css_thresh)))
+    if req.frag_min_charge is not None:
+        overrides.append(_CfgOverride("CR_MIN_CHARGE", int(req.frag_min_charge)))
+    if req.frag_max_charge is not None:
+        overrides.append(_CfgOverride("CR_MAX_CHARGE", int(req.frag_max_charge)))
+    if req.copies is not None:
+        overrides.append(_CfgOverride("COPIES", int(req.copies)))
+    if req.amidated is not None:
+        overrides.append(_CfgOverride("AMIDATED", bool(req.amidated)))
+    if req.disulfide_bonds is not None:
+        overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
+    if disulfide_map:
+        overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.enable_isodec_rules is not None:
+        overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    return overrides
+
+
 def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
     filepath = filepath_override or req.filepath
     css_thresh = req.isodec_css_thresh if req.isodec_css_thresh is not None else req.min_cosine
@@ -248,6 +335,7 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         req.frag_max_charge,
     )
     overrides = _build_overrides(req, filepath)
+    precursor_result = None
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
@@ -255,6 +343,10 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
             residues = parse_custom_sequence(cfg.PEPTIDE)
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=True)
             spectrum = preprocess_spectrum(spectrum)
+            if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
+                # Calibrate via precursor search without plotting.
+                precursor_result = run_precursor_headless(residues, spectrum, isodec_config)
+                spectrum = np.asarray(precursor_result.get("spectrum"), dtype=float)
             result = run_fragments_headless(residues, spectrum, isodec_config)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -298,12 +390,213 @@ def _run_fragments_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         )
 
     fragments = [f for f in fragments if f["ion_type"] and f["fragment_index"] is not None]
+    precursor_summary = None
+    if precursor_result:
+        precursor_summary = {
+            "match_found": bool(precursor_result.get("match_found")),
+            "best_charge": precursor_result.get("best_z"),
+            "best_css": _safe_float(precursor_result.get("best_css")),
+            "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
+            "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
+            "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
+        }
     return {
         "sequence": sequence,
         "sequence_raw": sequence_raw,
         "scan": req.scan,
         "fragments": fragments,
         "count": len(fragments),
+        "precursor": precursor_summary,
+        "spectrum": {
+            "mz": spectrum_mz_ds,
+            "intensity": spectrum_int_ds,
+            "raw_points": int(spectrum_mz.size),
+            "points": len(spectrum_mz_ds),
+        },
+        "theory": {
+            "mz": theory_mz,
+            "intensity": theory_int,
+        },
+    }
+
+
+def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
+    filepath = filepath_override or req.filepath
+    logger.info(
+        "run precursor: scan=%s tol_ppm=%s charge=[%s,%s]",
+        req.scan,
+        req.match_tol_ppm,
+        req.frag_min_charge,
+        req.frag_max_charge,
+    )
+    overrides = _build_precursor_overrides(req, filepath)
+    try:
+        with _override_cfg(overrides):
+            cfg.require_isodec_rules()
+            isodec_config = cfg.build_isodec_config()
+            residues = parse_custom_sequence(cfg.PEPTIDE)
+            spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=True)
+            spectrum = preprocess_spectrum(spectrum)
+            result = run_precursor_headless(residues, spectrum, isodec_config)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    sequence_raw = cfg.PEPTIDE
+    sequence = "".join(aa for aa, _mods in residues)
+    spectrum_mz = np.asarray(result.get("spectrum_mz", []), dtype=float)
+    spectrum_int = np.asarray(result.get("spectrum_int", []), dtype=float)
+    spectrum_mz_ds, spectrum_int_ds = _downsample_xy(spectrum_mz, spectrum_int)
+    theory_mz, theory_int = _theory_from_dist(result.get("best_theory_dist"))
+
+    candidates: list[dict[str, Any]] = []
+    for cand in result.get("candidates", []) or []:
+        candidates.append(
+            {
+                "charge": int(cand.get("charge", 0) or 0),
+                "obs_mz": _safe_float(cand.get("obs_mz")),
+                "anchor_theory_mz": _safe_float(cand.get("anchor_theory_mz")),
+                "ppm": _safe_float(cand.get("ppm")),
+                "css": _safe_float(cand.get("css")),
+                "accepted": bool(cand.get("accepted", False)),
+                "iteration": int(cand.get("iteration", 0) or 0),
+            }
+        )
+
+    window_raw = result.get("plot_window")
+    plot_window = None
+    if isinstance(window_raw, (list, tuple)) and len(window_raw) == 2:
+        w_min = _safe_float(window_raw[0])
+        w_max = _safe_float(window_raw[1])
+        if w_min is not None and w_max is not None and w_min < w_max:
+            plot_window = {"min": w_min, "max": w_max}
+
+    precursor_summary = {
+        "match_found": bool(result.get("match_found")),
+        "best_charge": result.get("best_z"),
+        "best_css": _safe_float(result.get("best_css")),
+        "shift_ppm": _safe_float(result.get("shift_ppm")),
+        "best_obs_mz": _safe_float(result.get("best_obs_mz")),
+        "best_theory_mz": _safe_float(result.get("best_theory_mz")),
+    }
+
+    logger.info(
+        "run precursor complete: match=%s best_z=%s css=%s shift_ppm=%s",
+        precursor_summary["match_found"],
+        precursor_summary["best_charge"],
+        precursor_summary["best_css"],
+        precursor_summary["shift_ppm"],
+    )
+
+    return {
+        "mode": "precursor",
+        "sequence": sequence,
+        "sequence_raw": sequence_raw,
+        "scan": req.scan,
+        "precursor": precursor_summary,
+        "candidates": candidates,
+        "count": len(candidates),
+        "plot_window": plot_window,
+        "spectrum": {
+            "mz": spectrum_mz_ds,
+            "intensity": spectrum_int_ds,
+            "raw_points": int(spectrum_mz.size),
+            "points": len(spectrum_mz_ds),
+        },
+        "theory": {
+            "mz": theory_mz,
+            "intensity": theory_int,
+        },
+    }
+
+
+def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
+    filepath = filepath_override or req.filepath
+    logger.info(
+        "run charge_reduced: scan=%s tol_ppm=%s charge=[%s,%s]",
+        req.scan,
+        req.match_tol_ppm,
+        req.frag_min_charge,
+        req.frag_max_charge,
+    )
+    overrides = _build_charge_reduced_overrides(req, filepath)
+    try:
+        with _override_cfg(overrides):
+            cfg.require_isodec_rules()
+            isodec_config = cfg.build_isodec_config()
+            residues = parse_custom_sequence(cfg.PEPTIDE)
+            spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=True)
+            spectrum = preprocess_spectrum(spectrum)
+            result = run_charge_reduced_headless(residues, spectrum, isodec_config)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    sequence_raw = cfg.PEPTIDE
+    sequence = "".join(aa for aa, _mods in residues)
+    spectrum_mz = np.asarray(result.get("spectrum_mz", []), dtype=float)
+    spectrum_int = np.asarray(result.get("spectrum_int", []), dtype=float)
+    spectrum_mz_ds, spectrum_int_ds = _downsample_xy(spectrum_mz, spectrum_int)
+    matches = result.get("matches", []) or []
+    theory_mz, theory_int = _extract_theory_peaks(matches)
+
+    overlays: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    for m in matches:
+        dist = m.get("dist")
+        dist_full = m.get("dist_full")
+        if isinstance(dist, np.ndarray) and dist.size:
+            mz_vals = dist[:, 0].astype(float).tolist()
+            int_vals = dist[:, 1].astype(float).tolist()
+        else:
+            mz_vals, int_vals = [], []
+        anchor_mz = None
+        ppm = None
+        if isinstance(dist_full, np.ndarray) and dist_full.size:
+            anchor_idx = int(np.argmax(dist_full[:, 1]))
+            anchor_mz = float(dist_full[anchor_idx, 0])
+            obs_mz = _safe_float(m.get("obs_mz"))
+            if obs_mz is not None and anchor_mz:
+                ppm = ((obs_mz - anchor_mz) / anchor_mz) * 1e6
+        overlays.append(
+            {
+                "label": m.get("label", ""),
+                "mz": mz_vals,
+                "intensity": int_vals,
+                "color": _normalize_color(m.get("color")),
+                "charge": int(m.get("z", 0) or 0),
+                "state": m.get("state", ""),
+                "target": m.get("target", ""),
+                "obs_mz": _safe_float(m.get("obs_mz")),
+                "css": _safe_float(m.get("css")),
+            }
+        )
+        candidates.append(
+            {
+                "label": m.get("label", ""),
+                "charge": int(m.get("z", 0) or 0),
+                "state": m.get("state", ""),
+                "target": m.get("target", ""),
+                "obs_mz": _safe_float(m.get("obs_mz")),
+                "obs_int": _safe_float(m.get("obs_int")),
+                "anchor_theory_mz": anchor_mz,
+                "ppm": _safe_float(ppm),
+                "css": _safe_float(m.get("css")),
+            }
+        )
+
+    logger.info("run charge_reduced complete: count=%s", len(candidates))
+
+    return {
+        "mode": "charge_reduced",
+        "sequence": sequence,
+        "sequence_raw": sequence_raw,
+        "scan": req.scan,
+        "candidates": candidates,
+        "count": len(candidates),
+        "overlays": overlays,
         "spectrum": {
             "mz": spectrum_mz_ds,
             "intensity": spectrum_int_ds,
@@ -338,6 +631,58 @@ async def run_fragments_upload(file: UploadFile = File(...), payload: str = Form
         payload_data["filepath"] = temp_path
         req = FragmentsRunRequest(**payload_data)
         return _run_fragments_impl(req, filepath_override=temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.post("/api/run/precursor")
+def run_precursor(req: FragmentsRunRequest) -> dict[str, Any]:
+    return _run_precursor_impl(req)
+
+
+@app.post("/api/run/precursor/upload")
+async def run_precursor_upload(file: UploadFile = File(...), payload: str = Form(...)) -> dict[str, Any]:
+    try:
+        payload_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from exc
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+        payload_data["filepath"] = temp_path
+        req = FragmentsRunRequest(**payload_data)
+        return _run_precursor_impl(req, filepath_override=temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.post("/api/run/charge_reduced")
+def run_charge_reduced(req: FragmentsRunRequest) -> dict[str, Any]:
+    return _run_charge_reduced_impl(req)
+
+
+@app.post("/api/run/charge_reduced/upload")
+async def run_charge_reduced_upload(file: UploadFile = File(...), payload: str = Form(...)) -> dict[str, Any]:
+    try:
+        payload_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from exc
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+        payload_data["filepath"] = temp_path
+        req = FragmentsRunRequest(**payload_data)
+        return _run_charge_reduced_impl(req, filepath_override=temp_path)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)

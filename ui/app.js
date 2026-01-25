@@ -50,6 +50,7 @@ let coverageGroupMap = new Map();
 let coveragePopoverHideTimer = null;
 let coveragePopoverActiveKey = null;
 let activeResultRow = null;
+let lastPrecursorWindow = null;
 
 const refreshTableRows = () => {
   tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
@@ -207,7 +208,8 @@ const updateResultsTable = (fragments) => {
   const ranked = [...fragments].sort((a, b) => (b.css || 0) - (a.css || 0));
   tbody.innerHTML = ranked
     .map((frag) => {
-      const ion = `${frag.ionType}${frag.fragLen}`;
+      const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
+      const ion = frag.displayLabel || ionFallback;
       const mz = frag.obsMz != null ? frag.obsMz.toFixed(2) : '';
       const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
@@ -245,13 +247,81 @@ const applyFragments = (fragments, sequence) => {
   rerenderCoverage();
 };
 
-const applySpectrum = (spectrum, theory) => {
+const applyPrecursorResults = (data) => {
+  const sequence = data.sequence;
+  if (sequence && sequence !== peptideInput.value) {
+    peptideInput.value = sequence;
+  }
+  const summary = data.precursor || {};
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+  const rows = candidates.map((cand) => ({
+    displayLabel: `Precursor ${cand.charge}+`,
+    ionType: 'p',
+    fragLen: cand.charge,
+    fragmentIndex: null,
+    charge: cand.charge,
+    obsMz: cand.obs_mz,
+    obsInt: null,
+    css: cand.css,
+    anchorMz: cand.anchor_theory_mz,
+    anchorPpm: cand.ppm,
+    accepted: cand.accepted,
+  }));
+  coverageRows = [];
+  hideCoveragePopover();
+  updateResultsTable(rows);
+  rerenderCoverage();
+
+  const bestCss = toNumberOrNull(summary.best_css);
+  const shiftPpm = toNumberOrNull(summary.shift_ppm);
+  if (summary.match_found) {
+    const bestCharge = summary.best_charge ? `${summary.best_charge}+` : '?';
+    const cssText = Number.isFinite(bestCss) ? bestCss.toFixed(3) : '--';
+    const shiftApplied = Number.isFinite(shiftPpm) ? -shiftPpm : null;
+    const shiftText = shiftApplied != null ? `, shift ${shiftApplied.toFixed(2)} ppm` : '';
+    setCoverageStatus(`Precursor ${bestCharge} css=${cssText}${shiftText}`);
+  } else {
+    setCoverageStatus('Precursor not found', true);
+  }
+};
+
+const applyChargeReducedResults = (data) => {
+  const sequence = data.sequence;
+  if (sequence && sequence !== peptideInput.value) {
+    peptideInput.value = sequence;
+  }
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+  const rows = candidates.map((cand) => {
+    const target = cand.target ? `${cand.target} ` : '';
+    const state = cand.state && cand.state !== '0' ? ` ${cand.state}` : '';
+    return {
+      displayLabel: `CR ${target}${cand.charge}+${state}`.trim(),
+      ionType: 'cr',
+      fragLen: cand.charge,
+      fragmentIndex: null,
+      charge: cand.charge,
+      obsMz: cand.obs_mz,
+      obsInt: cand.obs_int,
+      css: cand.css,
+      anchorMz: cand.anchor_theory_mz,
+      anchorPpm: cand.ppm,
+      label: cand.label,
+    };
+  });
+  coverageRows = [];
+  hideCoveragePopover();
+  updateResultsTable(rows);
+  rerenderCoverage();
+  setCoverageStatus(rows.length ? `Charge reduced: ${rows.length} candidates` : 'Charge reduced: no matches', !rows.length);
+};
+
+const applySpectrum = (spectrum, theory, options = {}) => {
   if (!spectrum || !Array.isArray(spectrum.mz) || !spectrum.mz.length) {
     return;
   }
   const theoryMz = theory && Array.isArray(theory.mz) ? theory.mz : [];
   const theoryInt = theory && Array.isArray(theory.intensity) ? theory.intensity : [];
-  renderSpectrumPlot(spectrum.mz, spectrum.intensity, theoryMz, theoryInt);
+  renderSpectrumPlot(spectrum.mz, spectrum.intensity, theoryMz, theoryInt, options);
 };
 
 const startRun = async () => {
@@ -282,9 +352,13 @@ const startRun = async () => {
   }, 300);
 
   try {
+    const mode = modeSelect ? modeSelect.value : 'fragments';
+    const isPrecursor = mode === 'precursor';
+    const isChargeReduced = mode === 'charge_reduced';
     const payload = {
       filepath: filepathValue,
       scan: scanSelect ? Number(scanSelect.value) : 1,
+      mode,
       peptide: peptideInput.value,
       mz_min: mzMinInput ? toNumberOrNull(mzMinInput.value) : null,
       mz_max: mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null,
@@ -309,17 +383,28 @@ const startRun = async () => {
       payload.filepath = selectedFile.name;
     }
 
+    const runPath = isPrecursor
+      ? '/api/run/precursor'
+      : isChargeReduced
+        ? '/api/run/charge_reduced'
+        : '/api/run/fragments';
+    const runUploadPath = isPrecursor
+      ? '/api/run/precursor/upload'
+      : isChargeReduced
+        ? '/api/run/charge_reduced/upload'
+        : '/api/run/fragments/upload';
+
     let response;
     if (useUpload && selectedFile) {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('payload', JSON.stringify(payload));
-      response = await fetch(`${API_BASE}/api/run/fragments/upload`, {
+      response = await fetch(`${API_BASE}${runUploadPath}`, {
         method: 'POST',
         body: formData,
       });
     } else {
-      response = await fetch(`${API_BASE}/api/run/fragments`, {
+      response = await fetch(`${API_BASE}${runPath}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -332,10 +417,43 @@ const startRun = async () => {
     }
 
     const data = await response.json();
-    applyFragments(data.fragments || [], data.sequence);
-    applySpectrum(data.spectrum, data.theory);
-    const count = Number(data.count || 0);
-    setWarnings(count === 0 ? ['No fragments matched. Check sequence and parameters.'] : []);
+    const isPrecursorMode = isPrecursor || data.mode === 'precursor';
+    const isChargeReducedMode = isChargeReduced || data.mode === 'charge_reduced';
+
+    const parsePlotWindow = (window) => {
+      if (!window || typeof window !== 'object') return null;
+      const min = toNumberOrNull(window.min);
+      const max = toNumberOrNull(window.max);
+      return Number.isFinite(min) && Number.isFinite(max) && min < max ? [min, max] : null;
+    };
+
+    if (isPrecursorMode) {
+      lastPrecursorWindow = parsePlotWindow(data.plot_window);
+      applyPrecursorResults(data);
+      applySpectrum(data.spectrum, data.theory, {
+        rangeOverride: lastPrecursorWindow,
+        theoryColor: '#ef4444',
+        mode: 'precursor',
+      });
+      const matchFound = Boolean(data.precursor && data.precursor.match_found);
+      setWarnings(matchFound ? [] : ['Precursor not found. Try adjusting charge range or tolerance.']);
+    } else if (isChargeReducedMode) {
+      lastPrecursorWindow = null;
+      applyChargeReducedResults(data);
+      applySpectrum(data.spectrum, data.theory, {
+        overlays: data.overlays,
+        theoryColor: '#0f172a',
+        mode: 'charge_reduced',
+      });
+      const count = Number(data.count || 0);
+      setWarnings(count === 0 ? ['No charge-reduced matches found.'] : []);
+    } else {
+      lastPrecursorWindow = null;
+      applyFragments(data.fragments || [], data.sequence);
+      applySpectrum(data.spectrum, data.theory);
+      const count = Number(data.count || 0);
+      setWarnings(count === 0 ? ['No fragments matched. Check sequence and parameters.'] : []);
+    }
     progress = 100;
     progressBar.style.width = '100%';
   } catch (error) {
@@ -439,9 +557,18 @@ const buildDemoSpectrum = () => {
   return { mz, intensity, theoryMz, theoryInt };
 };
 
-const renderSpectrumPlot = (expMz, expInt, theoryMz, theoryInt) => {
+const renderSpectrumPlot = (expMz, expInt, theoryMz, theoryInt, options = {}) => {
   const rangeMin = mzMinInput ? toNumberOrNull(mzMinInput.value) : null;
   const rangeMax = mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null;
+  const override = Array.isArray(options.rangeOverride) ? options.rangeOverride : null;
+  const overrideMin = override ? toNumberOrNull(override[0]) : null;
+  const overrideMax = override ? toNumberOrNull(override[1]) : null;
+  let rangeUsed = null;
+  if (Number.isFinite(overrideMin) && Number.isFinite(overrideMax) && overrideMin < overrideMax) {
+    rangeUsed = [overrideMin, overrideMax];
+  } else if (rangeMin != null && rangeMax != null && rangeMin < rangeMax) {
+    rangeUsed = [rangeMin, rangeMax];
+  }
   const buildStickData = (xs, ys, factor = 1, base = 0) => {
     const xlist = [];
     const ylist = [];
@@ -462,16 +589,45 @@ const renderSpectrumPlot = (expMz, expInt, theoryMz, theoryInt) => {
     });
     return max;
   };
-  const expMax = maxFinite(expInt);
-  const theoryMax = maxFinite(theoryInt);
-  const yMax = Math.max(expMax, theoryMax, 1);
+  const maxFiniteInRange = (xs, ys, min, max) => {
+    let maxVal = 0;
+    let found = false;
+    const n = Math.min(xs.length, ys.length);
+    for (let i = 0; i < n; i += 1) {
+      const xVal = xs[i];
+      const yVal = ys[i];
+      if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue;
+      if (xVal < min || xVal > max) continue;
+      found = true;
+      if (yVal > maxVal) maxVal = yVal;
+    }
+    return found ? maxVal : maxFinite(ys);
+  };
+  const expMax = rangeUsed ? maxFiniteInRange(expMz, expInt, rangeUsed[0], rangeUsed[1]) : maxFinite(expInt);
+  const theoryColor = options.theoryColor || '#f59e0b';
+  const rawOverlays = Array.isArray(options.overlays) ? options.overlays : [];
+  let overlayList = rawOverlays.filter(
+    (spec) => spec && Array.isArray(spec.mz) && Array.isArray(spec.intensity) && spec.mz.length && spec.intensity.length
+  );
+  if (!overlayList.length && theoryMz.length && theoryInt.length) {
+    overlayList = [{ mz: theoryMz, intensity: theoryInt, color: theoryColor, label: 'Theory' }];
+  }
+  let overlayMax = 0;
+  overlayList.forEach((spec) => {
+    const mzVals = spec.mz || [];
+    const intVals = spec.intensity || [];
+    const maxVal = rangeUsed
+      ? maxFiniteInRange(mzVals, intVals, rangeUsed[0], rangeUsed[1])
+      : maxFinite(intVals);
+    if (Number.isFinite(maxVal) && maxVal > overlayMax) overlayMax = maxVal;
+  });
+  const yMax = Math.max(expMax, overlayMax, 1);
   const expStick = buildStickData(expMz, expInt, 1, 0);
-  const theoryStick = buildStickData(theoryMz, theoryInt, -1, 0);
   const layout = {
     ...plotLayout,
     xaxis: {
       ...plotLayout.xaxis,
-      range: rangeMin != null && rangeMax != null && rangeMin < rangeMax ? [rangeMin, rangeMax] : undefined,
+      range: rangeUsed || undefined,
     },
     yaxis: {
       ...plotLayout.yaxis,
@@ -491,17 +647,36 @@ const renderSpectrumPlot = (expMz, expInt, theoryMz, theoryInt) => {
       line: { color: '#0f172a', width: 1 },
     },
   ];
-  if (theoryStick.xlist.length) {
+  const isChargeReducedMode = options.mode === 'charge_reduced';
+  const normalizeOverlayTarget = (value) => {
+    const text = String(value || '').toLowerCase();
+    if (text.includes('complex')) return 'Complex';
+    if (text.includes('monomer')) return 'Monomer';
+    return value || 'Theory';
+  };
+  const showOverlayLegend = isChargeReducedMode ? true : overlayList.length > 1;
+  const legendSeen = new Set();
+  overlayList.forEach((spec) => {
+    const stick = buildStickData(spec.mz || [], spec.intensity || [], -1, 0);
+    if (!stick.xlist.length) return;
+    const legendName = isChargeReducedMode ? normalizeOverlayTarget(spec.target) : spec.label || 'Theory';
+    let showlegend = showOverlayLegend;
+    if (isChargeReducedMode) {
+      const key = String(legendName).toLowerCase();
+      showlegend = !legendSeen.has(key);
+      legendSeen.add(key);
+    }
     traces.push({
-      x: theoryStick.xlist,
-      y: theoryStick.ylist,
+      x: stick.xlist,
+      y: stick.ylist,
       type: 'scatter',
       mode: 'lines',
-      showlegend: false,
+      name: legendName,
+      showlegend,
       hoverinfo: 'skip',
-      line: { color: '#f59e0b', width: 1 },
+      line: { color: spec.color || theoryColor, width: 1 },
     });
-  }
+  });
   Plotly.newPlot(
     'spectrumPlot',
     traces,
@@ -527,12 +702,13 @@ if (spectrumZoomButton) {
     const min = mzMinInput ? toNumberOrNull(mzMinInput.value) : null;
     const max = mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null;
     if (min != null && max != null && min < max) {
-      Plotly.relayout('spectrumPlot', {
-        'xaxis.range': [min, max],
-      });
+      zoomSpectrumToRange(min, max);
+    } else if (modeSelect && modeSelect.value === 'precursor' && lastPrecursorWindow) {
+      zoomSpectrumToRange(lastPrecursorWindow[0], lastPrecursorWindow[1]);
     } else {
       Plotly.relayout('spectrumPlot', {
         'xaxis.autorange': true,
+        'yaxis.autorange': true,
       });
     }
   });
@@ -800,18 +976,25 @@ const computeSpectrumMaxAbs = (minMz, maxMz) => {
   return maxAbs;
 };
 
-const zoomSpectrumToMatch = (match) => {
-  const centerMz = getMatchCenterMz(match);
-  if (!Number.isFinite(centerMz)) {
+const zoomSpectrumToRange = (minMz, maxMz) => {
+  if (!Number.isFinite(minMz) || !Number.isFinite(maxMz) || minMz >= maxMz) {
     return;
   }
-  const [minMz, maxMz] = computeZoomRange(centerMz);
   const maxAbs = computeSpectrumMaxAbs(minMz, maxMz) || 1;
   const yPad = maxAbs * 1.15;
   Plotly.relayout('spectrumPlot', {
     'xaxis.range': [minMz, maxMz],
     'yaxis.range': [-yPad, yPad],
   });
+};
+
+const zoomSpectrumToMatch = (match) => {
+  const centerMz = getMatchCenterMz(match);
+  if (!Number.isFinite(centerMz)) {
+    return;
+  }
+  const [minMz, maxMz] = computeZoomRange(centerMz);
+  zoomSpectrumToRange(minMz, maxMz);
 };
 
 const handleCoveragePopoverClick = (event) => {
