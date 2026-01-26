@@ -37,7 +37,7 @@ filepath = '/Users/terry/Downloads/Slice A ECD trans 15 lockmass smoothed mz (1)
 # - "raw": plot raw spectrum only (no preprocessing)
 PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
-ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-centroiding).
+ENABLE_CENTROID = True  # Global toggle for centroid usage (import + local re-centroiding).
 
 # Optional: focus on an m/z region of interest.
 # Set to None to use the full scan.
