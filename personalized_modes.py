@@ -1462,6 +1462,9 @@ def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = Non
         theory_mz = dist[:, 0].tolist() if isinstance(dist, np.ndarray) and dist.size else []
         theory_int = dist[:, 1].tolist() if isinstance(dist, np.ndarray) and dist.size else []
 
+        # Use anchor_theory_mz if available, otherwise use expected_theory_mz
+        theory_anchor_mz = r.get("anchor_theory_mz") or r.get("expected_theory_mz")
+
         formatted_results.append({
             "label": label,
             "ion_type": r.get("ion_type", ""),
@@ -1479,7 +1482,7 @@ def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = Non
             "raw_cosine": r.get("raw_cosine_preanchor"),
             "isodec_css": r.get("isodec_css"),
             "isodec_accepted": bool(r.get("isodec_accepted", False)),
-            "anchor_theory_mz": r.get("anchor_theory_mz"),
+            "anchor_theory_mz": theory_anchor_mz,
             "anchor_obs_mz": r.get("anchor_obs_mz"),
             "anchor_ppm": r.get("anchor_ppm"),
             "anchor_within_ppm": bool(r.get("anchor_within_ppm", False)),

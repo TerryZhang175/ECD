@@ -748,15 +748,27 @@ def diagnose_candidate(
                 obs_mz = obs_mz_c
                 obs_int = obs_int_c
 
+        # Even if no anchor found, save the expected theory m/z (strongest peak)
+        expected_theory_mz = float(sample_mzs[int(np.argmax(best_pred))])
+        variant_result["expected_theory_mz"] = expected_theory_mz
+
         if anchor_hits < int(cfg.ANCHOR_MIN_MATCHES) or anchor_theory_mz is None:
             variant_result["reason"] = "anchor_outside_ppm"
+            variant_result["anchor_theory_mz"] = expected_theory_mz  # Still provide theory m/z
+            # Build dist_plot for visualization even without anchor match
+            dist_plot = np.column_stack([sample_mzs.copy(), best_pred.copy()])
+            max_plot = float(np.max(dist_plot[:, 1]))
+            if max_plot > 0 and obs_max > 0:
+                dist_plot[:, 1] *= obs_max / max_plot
+            variant_result["dist_plot"] = dist_plot
             variant_result["diagnostic_steps"].append(
                 {
                     "step": "5. Anchor selection",
                     "status": "fail",
-                    "details": f"No anchor peak found within {match_tol_ppm} ppm and {min_obs_rel_int} relative intensity",
+                    "details": f"No anchor peak found within {match_tol_ppm} ppm (expected at {expected_theory_mz:.4f})",
                 }
             )
+            variant_results.append(variant_result)
             continue
 
         ppm_offset = ((float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)) * 1e6
