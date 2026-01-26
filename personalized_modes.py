@@ -1185,7 +1185,8 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
 
     best = list(best_by_obs.values())
     best.sort(key=lambda d: (d["score"], d["obs_int"]), reverse=True)
-    best = best[: int(cfg.MAX_PLOTTED_FRAGMENTS)]
+    if cfg.MAX_PLOTTED_FRAGMENTS is not None:
+        best = best[: int(cfg.MAX_PLOTTED_FRAGMENTS)]
 
     if emit_outputs:
         print(f"Matched fragments: {len(best)} (from {len(matches)} raw matches)")
