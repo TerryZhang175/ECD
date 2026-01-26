@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/WT 2n5 ConA ECDRE34.txt'
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "diagnose"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -44,8 +44,8 @@ ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-c
 # Examples:
 #   MZ_MIN, MZ_MAX = 900, 1100
 #   MZ_MIN, MZ_MAX = 300, 2000
-MZ_MIN = None
-MZ_MAX = None
+MZ_MIN = 2600
+MZ_MAX = 2700
 
 # Peptide sequence. Supports chemical-formula mods in brackets, e.g.:
 # - Oxidation: "M[O]"
@@ -171,6 +171,9 @@ PRECURSOR_WINDOW_DA = 5.1
 PRECURSOR_SEARCH_ITERATIONS = 5
 PRECURSOR_MATCH_TOL_PPM = 80  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
 ENABLE_LOCK_MASS = True
+# Enable precursor lock-mass calibration before fragments/complex_fragments/charge_reduced modes.
+# When True, the spectrum is first searched for the precursor ion, and if found, all m/z values
+# are shifted to correct for mass calibration drift before fragment matching begins.
 PRECURSOR_CHAIN_TO_FRAGMENTS = True
 
 # Charge-reduced precursor settings.
