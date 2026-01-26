@@ -19,7 +19,7 @@ import numpy as np
 
 import personalized_config as cfg
 from personalized import load_spectrum, preprocess_spectrum
-from personalized_modes import run_charge_reduced_headless, run_fragments_headless, run_precursor_headless, run_raw_headless
+from personalized_modes import run_charge_reduced_headless, run_diagnose_headless, run_fragments_headless, run_precursor_headless, run_raw_headless
 from personalized_sequence import parse_custom_sequence
 
 
@@ -191,6 +191,25 @@ class FragmentsRunRequest(BaseModel):
     enable_isodec_rules: Optional[bool] = None
     enable_h_transfer: Optional[bool] = None
     enable_neutral_losses: Optional[bool] = None
+
+
+class DiagnoseRunRequest(BaseModel):
+    filepath: str = Field(..., description="Path to the spectrum file")
+    scan: int = Field(1, ge=1)
+    peptide: str
+    ion_spec: str = Field(..., description="Ion spec to diagnose, e.g., 'c7^2+', 'z12-2H2O^3+'")
+    h_transfer: int = Field(0, ge=-2, le=2, description="H transfer degree (-2 to +2)")
+    mz_min: Optional[float] = None
+    mz_max: Optional[float] = None
+    frag_min_charge: Optional[int] = Field(None, ge=1)
+    frag_max_charge: Optional[int] = Field(None, ge=1)
+    match_tol_ppm: Optional[float] = Field(None, gt=0)
+    min_cosine: Optional[float] = Field(None, ge=0, le=1)
+    copies: Optional[int] = Field(None, ge=1)
+    amidated: Optional[bool] = None
+    disulfide_bonds: Optional[int] = Field(None, ge=0)
+    disulfide_map: Optional[str] = None
+    enable_isodec_rules: Optional[bool] = None
 
 
 @app.get("/api/health")
@@ -845,6 +864,134 @@ async def run_charge_reduced_upload(file: UploadFile = File(...), payload: str =
         payload_data["filepath"] = temp_path
         req = FragmentsRunRequest(**payload_data)
         return _run_charge_reduced_impl(req, filepath_override=temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def _build_diagnose_overrides(req: DiagnoseRunRequest, filepath: str) -> list[_CfgOverride]:
+    disulfide_map = _parse_disulfide_map(req.disulfide_map) if hasattr(req, 'disulfide_map') and req.disulfide_map else []
+    overrides = [
+        _CfgOverride("filepath", filepath),
+        _CfgOverride("SCAN", int(req.scan)),
+        _CfgOverride("PLOT_MODE", "diagnose"),
+        _CfgOverride("PEPTIDE", req.peptide),
+        _CfgOverride("MZ_MIN", req.mz_min),
+        _CfgOverride("MZ_MAX", req.mz_max),
+        _CfgOverride("DIAGNOSE_ION_SPEC", req.ion_spec),
+        _CfgOverride("DIAGNOSE_H_TRANSFER", int(req.h_transfer)),
+        _CfgOverride("DIAGNOSE_EXPORT_CSV", False),
+        _CfgOverride("DIAGNOSE_SHOW_PLOT", False),
+    ]
+    if req.frag_min_charge is not None:
+        overrides.append(_CfgOverride("FRAG_MIN_CHARGE", int(req.frag_min_charge)))
+    if req.frag_max_charge is not None:
+        overrides.append(_CfgOverride("FRAG_MAX_CHARGE", int(req.frag_max_charge)))
+    if req.match_tol_ppm is not None:
+        overrides.append(_CfgOverride("MATCH_TOL_PPM", float(req.match_tol_ppm)))
+    if req.min_cosine is not None:
+        overrides.append(_CfgOverride("MIN_COSINE", float(req.min_cosine)))
+        overrides.append(_CfgOverride("ISODEC_CSS_THRESH", float(req.min_cosine)))
+    if req.copies is not None:
+        overrides.append(_CfgOverride("COPIES", int(req.copies)))
+    if req.amidated is not None:
+        overrides.append(_CfgOverride("AMIDATED", bool(req.amidated)))
+    if req.disulfide_bonds is not None:
+        overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
+    if disulfide_map:
+        overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.enable_isodec_rules is not None:
+        overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    return overrides
+
+
+def _run_diagnose_impl(req: DiagnoseRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
+    filepath = filepath_override or req.filepath
+    logger.info(
+        "run diagnose: scan=%s ion_spec=%s h_transfer=%s",
+        req.scan,
+        req.ion_spec,
+        req.h_transfer,
+    )
+    overrides = _build_diagnose_overrides(req, filepath)
+    try:
+        with _override_cfg(overrides):
+            cfg.require_isodec_rules()
+            isodec_config = cfg.build_isodec_config()
+            residues = parse_custom_sequence(cfg.PEPTIDE)
+            spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
+            spectrum = preprocess_spectrum(spectrum)
+            result = run_diagnose_headless(
+                residues, spectrum, isodec_config,
+                ion_spec=req.ion_spec,
+                h_transfer=int(req.h_transfer),
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    sequence_raw = cfg.PEPTIDE
+    sequence = "".join(aa for aa, _mods in residues)
+    spectrum_mz = result.get("spectrum_mz", [])
+    spectrum_int = result.get("spectrum_int", [])
+    spectrum_mz_ds, spectrum_int_ds = _downsample_xy(
+        np.array(spectrum_mz, dtype=float),
+        np.array(spectrum_int, dtype=float),
+    )
+    theory_mz = result.get("theory_mz", [])
+    theory_int = result.get("theory_int", [])
+
+    logger.info("run diagnose complete: results=%s", len(result.get("results", [])))
+
+    return {
+        "mode": "diagnose",
+        "sequence": sequence,
+        "sequence_raw": sequence_raw,
+        "scan": req.scan,
+        "ion_spec": req.ion_spec,
+        "h_transfer": req.h_transfer,
+        "parsed": result.get("parsed"),
+        "charges_scanned": result.get("charges_scanned", []),
+        "results": result.get("results", []),
+        "best": result.get("best"),
+        "count": len(result.get("results", [])),
+        "spectrum": {
+            "mz": spectrum_mz_ds,
+            "intensity": spectrum_int_ds,
+            "raw_points": len(spectrum_mz),
+            "points": len(spectrum_mz_ds),
+        },
+        "theory": {
+            "mz": theory_mz,
+            "intensity": theory_int,
+        },
+    }
+
+
+@app.post("/api/run/diagnose")
+def run_diagnose(req: DiagnoseRunRequest) -> dict[str, Any]:
+    return _run_diagnose_impl(req)
+
+
+@app.post("/api/run/diagnose/upload")
+async def run_diagnose_upload(file: UploadFile = File(...), payload: str = Form(...)) -> dict[str, Any]:
+    try:
+        payload_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from exc
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+        payload_data["filepath"] = temp_path
+        req = DiagnoseRunRequest(**payload_data)
+        return _run_diagnose_impl(req, filepath_override=temp_path)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)

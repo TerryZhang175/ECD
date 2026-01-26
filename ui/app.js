@@ -34,6 +34,8 @@ const spectrumResetButton = document.getElementById('spectrumResetButton');
 const spectrumZoomButton = document.getElementById('spectrumZoomButton');
 const cosineSlider = document.getElementById('minCosine');
 const cosineValue = document.getElementById('cosineValue');
+const diagnoseSpecInput = document.getElementById('diagnoseSpec');
+const diagnoseHTransferSelect = document.getElementById('diagnoseHTransfer');
 const resultsFilter = document.getElementById('resultsFilter');
 const resultsSort = document.getElementById('resultsSort');
 const resultsTable = document.getElementById('resultsTable');
@@ -348,6 +350,51 @@ const applyRawResults = (data) => {
   setCoverageStatus('Raw spectrum');
 };
 
+const applyDiagnoseResults = (data) => {
+  const sequence = data.sequence;
+  if (sequence && sequence !== peptideInput.value) {
+    peptideInput.value = sequence;
+  }
+  const results = Array.isArray(data.results) ? data.results : [];
+  const rows = results.map((r) => ({
+    displayLabel: r.label || `${r.ion_type}${r.frag_len}^${r.charge}+`,
+    ionType: r.ion_type,
+    fragLen: r.frag_len,
+    fragmentIndex: null,
+    charge: r.charge,
+    obsMz: r.anchor_obs_mz,
+    obsInt: r.obs_int,
+    css: r.isodec_css,
+    anchorMz: r.anchor_theory_mz,
+    anchorPpm: r.anchor_ppm,
+    label: r.label,
+    ok: r.ok,
+    reason: r.reason,
+    formula: r.formula,
+    monoMass: r.mono_mass,
+    rawCosine: r.raw_cosine,
+    diagnosticSteps: r.diagnostic_steps || [],
+    theoryMz: Array.isArray(r.theory_mz) ? r.theory_mz : [],
+    theoryIntensity: Array.isArray(r.theory_int) ? r.theory_int : [],
+    overlayColor: r.ok ? '#22c55e' : '#ef4444',
+  }));
+  coverageRows = rows;
+  hideCoveragePopover();
+  updateResultsTable(rows);
+  rerenderCoverage();
+
+  const best = data.best;
+  const ionSpec = data.ion_spec || '';
+  if (best && best.ok) {
+    const cssText = Number.isFinite(best.isodec_css) ? best.isodec_css.toFixed(3) : '--';
+    setCoverageStatus(`Diagnose ${ionSpec}: PASS (css=${cssText})`);
+  } else if (best) {
+    setCoverageStatus(`Diagnose ${ionSpec}: FAIL - ${best.reason || 'Unknown'}`, true);
+  } else {
+    setCoverageStatus(`Diagnose ${ionSpec}: No results`, true);
+  }
+};
+
 const applySpectrum = (spectrum, theory, options = {}) => {
   if (!spectrum || !Array.isArray(spectrum.mz) || !spectrum.mz.length) {
     return;
@@ -396,29 +443,60 @@ const startRun = async () => {
     const isPrecursor = mode === 'precursor';
     const isChargeReduced = mode === 'charge_reduced';
     const isComplexFragments = mode === 'complex_fragments';
+    const isDiagnose = mode === 'diagnose';
     const isRaw = mode === 'raw';
-    const payload = {
-      filepath: filepathValue,
-      scan: scanSelect ? Number(scanSelect.value) : 1,
-      mode,
-      peptide: peptideInput.value,
-      mz_min: mzMinInput ? toNumberOrNull(mzMinInput.value) : null,
-      mz_max: mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null,
-      ion_types: getIonTypesFromChips(),
-      frag_min_charge: fragMinChargeInput ? Number(fragMinChargeInput.value) : null,
-      frag_max_charge: fragMaxChargeInput ? Number(fragMaxChargeInput.value) : null,
-      match_tol_ppm: matchTolInput ? Number(matchTolInput.value) : null,
-      precursor_match_tol_ppm: precursorMatchTolInput ? Number(precursorMatchTolInput.value) : null,
-      min_cosine: Number(cosineSlider.value),
-      isodec_css_thresh: Number(cosineSlider.value),
-      enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
-      enable_h_transfer: hTransferInput ? hTransferInput.checked : null,
-      enable_neutral_losses: neutralLossInput ? neutralLossInput.checked : null,
-      copies: copiesInput ? Number(copiesInput.value) : null,
-      amidated: amidatedInput ? amidatedInput.checked : null,
-      disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
-      disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
-    };
+
+    // Build payload based on mode
+    let payload;
+    if (isDiagnose) {
+      const ionSpec = diagnoseSpecInput ? diagnoseSpecInput.value.trim() : '';
+      if (!ionSpec) {
+        setWarnings(['Ion spec is required for diagnose mode (e.g., c7^2+, z12-2H2O^3+)']);
+        stopRun();
+        return;
+      }
+      payload = {
+        filepath: filepathValue,
+        scan: scanSelect ? Number(scanSelect.value) : 1,
+        peptide: peptideInput.value,
+        ion_spec: ionSpec,
+        h_transfer: diagnoseHTransferSelect ? Number(diagnoseHTransferSelect.value) : 0,
+        mz_min: mzMinInput ? toNumberOrNull(mzMinInput.value) : null,
+        mz_max: mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null,
+        frag_min_charge: fragMinChargeInput ? Number(fragMinChargeInput.value) : null,
+        frag_max_charge: fragMaxChargeInput ? Number(fragMaxChargeInput.value) : null,
+        match_tol_ppm: matchTolInput ? Number(matchTolInput.value) : null,
+        min_cosine: Number(cosineSlider.value),
+        copies: copiesInput ? Number(copiesInput.value) : null,
+        amidated: amidatedInput ? amidatedInput.checked : null,
+        disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
+        disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
+        enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
+      };
+    } else {
+      payload = {
+        filepath: filepathValue,
+        scan: scanSelect ? Number(scanSelect.value) : 1,
+        mode,
+        peptide: peptideInput.value,
+        mz_min: mzMinInput ? toNumberOrNull(mzMinInput.value) : null,
+        mz_max: mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null,
+        ion_types: getIonTypesFromChips(),
+        frag_min_charge: fragMinChargeInput ? Number(fragMinChargeInput.value) : null,
+        frag_max_charge: fragMaxChargeInput ? Number(fragMaxChargeInput.value) : null,
+        match_tol_ppm: matchTolInput ? Number(matchTolInput.value) : null,
+        precursor_match_tol_ppm: precursorMatchTolInput ? Number(precursorMatchTolInput.value) : null,
+        min_cosine: Number(cosineSlider.value),
+        isodec_css_thresh: Number(cosineSlider.value),
+        enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
+        enable_h_transfer: hTransferInput ? hTransferInput.checked : null,
+        enable_neutral_losses: neutralLossInput ? neutralLossInput.checked : null,
+        copies: copiesInput ? Number(copiesInput.value) : null,
+        amidated: amidatedInput ? amidatedInput.checked : null,
+        disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
+        disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
+      };
+    }
 
     // Prefer the browsed file unless the user explicitly types a path.
     const useUpload = hasSelectedFile && !manualPathActive;
@@ -432,18 +510,22 @@ const startRun = async () => {
         ? '/api/run/charge_reduced'
         : isComplexFragments
           ? '/api/run/complex_fragments'
-          : isRaw
-            ? '/api/run/raw'
-            : '/api/run/fragments';
+          : isDiagnose
+            ? '/api/run/diagnose'
+            : isRaw
+              ? '/api/run/raw'
+              : '/api/run/fragments';
     const runUploadPath = isPrecursor
       ? '/api/run/precursor/upload'
       : isChargeReduced
         ? '/api/run/charge_reduced/upload'
         : isComplexFragments
           ? '/api/run/complex_fragments/upload'
-          : isRaw
-            ? '/api/run/raw/upload'
-            : '/api/run/fragments/upload';
+          : isDiagnose
+            ? '/api/run/diagnose/upload'
+            : isRaw
+              ? '/api/run/raw/upload'
+              : '/api/run/fragments/upload';
 
     let response;
     if (useUpload && selectedFile) {
@@ -471,6 +553,7 @@ const startRun = async () => {
     const isPrecursorMode = isPrecursor || data.mode === 'precursor';
     const isChargeReducedMode = isChargeReduced || data.mode === 'charge_reduced';
     const isComplexFragmentsMode = isComplexFragments || data.mode === 'complex_fragments';
+    const isDiagnoseMode = isDiagnose || data.mode === 'diagnose';
     const isRawMode = isRaw || data.mode === 'raw';
 
     const parsePlotWindow = (window) => {
@@ -500,6 +583,21 @@ const startRun = async () => {
       });
       const count = Number(data.count || 0);
       setWarnings(count === 0 ? ['No charge-reduced matches found.'] : []);
+    } else if (isDiagnoseMode) {
+      lastPrecursorWindow = null;
+      applyDiagnoseResults(data);
+      applySpectrum(data.spectrum, data.theory, {
+        theoryColor: '#8b5cf6',
+        mode: 'diagnose',
+      });
+      const best = data.best;
+      if (best && best.ok) {
+        setWarnings([]);
+      } else if (best) {
+        setWarnings([`Diagnose: ${best.reason || 'Not matched'}`]);
+      } else {
+        setWarnings(['No diagnose results found.']);
+      }
     } else if (isRawMode) {
       lastPrecursorWindow = null;
       applyRawResults(data);

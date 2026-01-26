@@ -97,6 +97,7 @@
                     <option value="charge_reduced">Charge reduced</option>
                     <option value="fragments" selected>Fragments</option>
                     <option value="complex_fragments">Complex fragments</option>
+                    <option value="diagnose">Diagnose</option>
                     <option value="raw">Raw</option>
                   </select>
                 </div>
@@ -265,25 +266,35 @@
             </div>
           </section>
 
-          <details class="panel" style="--delay: 400ms;">
-            <summary class="panel-header">
+          <section class="panel" style="--delay: 400ms;">
+            <div class="panel-header">
               <div class="panel-title">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
                   <path d="M4 10h16M9 5v14M15 5v14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
                 </svg>
-                <h2>Diagnose (Phase 2)</h2>
+                <h2>Diagnose Settings</h2>
               </div>
-              <span class="badge ghost">Optional</span>
-            </summary>
+            </div>
             <div class="panel-body">
               <div class="field">
-                <label for="diagnoseSpec">Diagnose ion spec</label>
-                <input id="diagnoseSpec" type="text" placeholder="C5H9NO3+" />
+                <label for="diagnoseSpec">Ion spec</label>
+                <input id="diagnoseSpec" type="text" placeholder="c7^2+" value="c7^2+" />
+                <div class="helper">Examples: c7^2+, z12-2H2O^3+, b4-NH3^1+</div>
               </div>
-              <div class="helper">Enable step-by-step scoring once diagnostics are loaded.</div>
+              <div class="field">
+                <label for="diagnoseHTransfer">H transfer</label>
+                <select id="diagnoseHTransfer">
+                  <option value="-2">-2H</option>
+                  <option value="-1">-1H</option>
+                  <option value="0" selected>0 (neutral)</option>
+                  <option value="1">+1H</option>
+                  <option value="2">+2H</option>
+                </select>
+              </div>
+              <div class="helper">Select "Diagnose" mode above and run to analyze a specific fragment ion.</div>
             </div>
-          </details>
+          </section>
         </aside>
 
         <section class="visuals">

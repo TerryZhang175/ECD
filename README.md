@@ -101,7 +101,7 @@ Set `PLOT_MODE` in `personalized_config.py` (CLI) or choose a mode in the UI/API
 - `fragments`: backbone fragment matching
 - `complex_fragments`: monomer + fragment non-covalent complexes
 
-Note: `diagnose` mode still exists in the CLI for deep debugging, but it is not exposed in the UI.
+The `diagnose` mode allows detailed analysis of a specific fragment ion to understand why it matched or failed to match.
 
 ## API Endpoints
 
@@ -124,6 +124,8 @@ Each mode has both JSON and upload variants:
 - `POST /api/run/fragments/upload`
 - `POST /api/run/complex_fragments`
 - `POST /api/run/complex_fragments/upload`
+- `POST /api/run/diagnose`
+- `POST /api/run/diagnose/upload`
 
 ### Example: fragments run
 

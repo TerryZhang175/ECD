@@ -1379,6 +1379,141 @@ def run_fragments_headless(residues, spectrum, isodec_config) -> dict:
     return run_fragments_mode(residues, spectrum, isodec_config, emit_outputs=False)
 
 
+def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = None, h_transfer: int = 0) -> dict:
+    """Run diagnose mode and return results without plotting (for API use)."""
+    spec = ion_spec or cfg.DIAGNOSE_ION_SPEC
+    if not spec:
+        return {
+            "error": "No ion spec provided",
+            "results": [],
+            "spectrum_mz": spectrum[:, 0].tolist() if spectrum.size else [],
+            "spectrum_int": spectrum[:, 1].tolist() if spectrum.size else [],
+        }
+
+    raw_spectrum = np.array(spectrum, dtype=float, copy=True)
+    if bool(cfg.ENABLE_FRAGMENT_INTENSITY_CAP):
+        tol_ppm = float(cfg.MATCH_TOL_PPM) if cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM is None else float(
+            cfg.FRAGMENT_INTENSITY_CAP_TOL_PPM
+        )
+        mz_min_cap = None if cfg.FRAGMENT_INTENSITY_CAP_MZ_MIN is None else float(cfg.FRAGMENT_INTENSITY_CAP_MZ_MIN)
+        mz_max_cap = None if cfg.FRAGMENT_INTENSITY_CAP_MZ_MAX is None else float(cfg.FRAGMENT_INTENSITY_CAP_MZ_MAX)
+        min_hits = int(max(0, cfg.FRAGMENT_INTENSITY_CAP_MIN_HITS))
+        cap, hits = compute_fragment_intensity_cap(
+            residues,
+            spectrum[:, 0],
+            spectrum[:, 1],
+            tol_ppm=float(tol_ppm),
+            mz_min=mz_min_cap,
+            mz_max=mz_max_cap,
+        )
+        if hits >= min_hits and cap > 0:
+            spectrum = strip_peaks_above_intensity_cap(spectrum, cap=float(cap))
+
+    ion_type, frag_len, loss_formula, loss_count, charge = parse_fragment_spec(spec)
+    charges = [int(charge)] if charge is not None else list(range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1))
+
+    if h_transfer not in (-2, -1, 0, 1, 2):
+        h_transfer = 0
+
+    spectrum_mz = spectrum[:, 0]
+    spectrum_int = spectrum[:, 1]
+
+    results = []
+    for z in charges:
+        r = diagnose_candidate(
+            residues=residues,
+            ion_type=ion_type,
+            frag_len=frag_len,
+            z=int(z),
+            loss_formula=loss_formula,
+            loss_count=int(loss_count),
+            h_transfer=h_transfer,
+            spectrum_mz=spectrum_mz,
+            spectrum_int=spectrum_int,
+            match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+            min_obs_rel_int=float(cfg.MIN_OBS_REL_INT),
+            rel_intensity_cutoff=float(cfg.REL_INTENSITY_CUTOFF),
+            mz_min=cfg.MZ_MIN,
+            mz_max=cfg.MZ_MAX,
+            isodec_config=isodec_config,
+        )
+        results.append(r)
+
+    def rank_key(d: dict):
+        css = d.get("isodec_css", float("nan"))
+        raw = d.get("raw_cosine_preanchor", 0.0)
+        ok = 1 if d.get("ok") else 0
+        css_val = css if np.isfinite(css) else -1.0
+        return (ok, css_val, raw)
+
+    results.sort(key=rank_key, reverse=True)
+
+    # Format results for API response
+    formatted_results = []
+    for r in results:
+        z = r["z"]
+        frag_name = r.get("frag_name", f"{ion_type}{frag_len}")
+        loss = ""
+        if loss_formula and loss_count:
+            loss = neutral_loss_label(int(loss_count), loss_formula)
+        label = f"{frag_name}{loss}^{z}+"
+
+        dist = r.get("dist_plot")
+        theory_mz = dist[:, 0].tolist() if isinstance(dist, np.ndarray) and dist.size else []
+        theory_int = dist[:, 1].tolist() if isinstance(dist, np.ndarray) and dist.size else []
+
+        formatted_results.append({
+            "label": label,
+            "ion_type": r.get("ion_type", ""),
+            "frag_name": frag_name,
+            "frag_len": r.get("frag_len"),
+            "charge": int(z),
+            "loss_formula": r.get("loss_formula", ""),
+            "loss_count": r.get("loss_count", 0),
+            "h_transfer": r.get("h_transfer", 0),
+            "ok": bool(r.get("ok", False)),
+            "reason": r.get("reason", ""),
+            "formula": r.get("formula", ""),
+            "mono_mass": r.get("mono_mass"),
+            "avg_mass": r.get("avg_mass"),
+            "raw_cosine": r.get("raw_cosine_preanchor"),
+            "isodec_css": r.get("isodec_css"),
+            "isodec_accepted": bool(r.get("isodec_accepted", False)),
+            "anchor_theory_mz": r.get("anchor_theory_mz"),
+            "anchor_obs_mz": r.get("anchor_obs_mz"),
+            "anchor_ppm": r.get("anchor_ppm"),
+            "anchor_within_ppm": bool(r.get("anchor_within_ppm", False)),
+            "obs_int": r.get("obs_int"),
+            "obs_rel_int": r.get("obs_rel_int"),
+            "theory_mz": theory_mz,
+            "theory_int": theory_int,
+            "diagnostic_steps": r.get("diagnostic_steps", []),
+            "theory_matches": r.get("theory_matches", []),
+        })
+
+    best = results[0] if results else None
+    best_dist = best.get("dist_plot") if isinstance(best, dict) else None
+
+    return {
+        "ion_spec": spec,
+        "parsed": {
+            "ion_type": ion_type,
+            "frag_len": frag_len,
+            "loss_formula": loss_formula,
+            "loss_count": loss_count,
+            "charge": charge,
+        },
+        "h_transfer": h_transfer,
+        "charges_scanned": charges,
+        "results": formatted_results,
+        "best": formatted_results[0] if formatted_results else None,
+        "spectrum_mz": raw_spectrum[:, 0].tolist() if raw_spectrum.size else [],
+        "spectrum_int": raw_spectrum[:, 1].tolist() if raw_spectrum.size else [],
+        "theory_mz": best_dist[:, 0].tolist() if isinstance(best_dist, np.ndarray) and best_dist.size else [],
+        "theory_int": best_dist[:, 1].tolist() if isinstance(best_dist, np.ndarray) and best_dist.size else [],
+    }
+
+
 def run_diagnose_mode(residues, spectrum, isodec_config) -> None:
     if not cfg.DIAGNOSE_ION_SPEC:
         raise ValueError('Set DIAGNOSE_ION_SPEC (e.g., "c7^2+" or "z12-2H2O^3+") when using PLOT_MODE="diagnose".')
