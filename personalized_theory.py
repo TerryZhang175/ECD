@@ -4,7 +4,11 @@ from typing import Optional
 
 import numpy as np
 import pyteomics.mass as ms
-from personalized_isotopes import isojim
+
+try:
+    from unidec.modules.isotopetools import isojim
+except Exception:
+    from personalized_isotopes import isojim
 
 import personalized_config as cfg
 
@@ -50,7 +54,7 @@ def theoretical_isodist_from_comp(
 
 def css_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if cfg.isodec_calculate_cosinesimilarity is None:
-        raise ImportError("IsoDec cosine similarity is not available.")
+        raise ImportError("IsoDec cosine similarity is not available; install UniDec IsoDec deps.")
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     return float(cfg.isodec_calculate_cosinesimilarity(a, b, 0, 0, False))
@@ -178,7 +182,7 @@ def observed_intensities_isodec(
     peak_mz: float,
 ) -> np.ndarray:
     if cfg.isodec_find_matched_intensities is None:
-        raise ImportError("IsoDec matched-intensity function is not available.")
+        raise ImportError("IsoDec matched-intensity function is not available; install UniDec IsoDec deps.")
     return cfg.isodec_find_matched_intensities(
         spectrum_mz,
         spectrum_int,

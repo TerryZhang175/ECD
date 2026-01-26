@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
-from personalized_importer import ImporterFactory
+
+try:
+    from unidec.UniDecImporter import ImporterFactory
+except Exception:
+    from personalized_importer import ImporterFactory
 
 import personalized_config as cfg
 from personalized_modes import (
@@ -48,7 +52,7 @@ def preprocess_spectrum(spectrum: np.ndarray) -> np.ndarray:
 
 def main() -> None:
     mode = str(cfg.PLOT_MODE).lower()
-    spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=(mode != "raw"))
+    spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
     if mode == "raw":
         run_raw_mode(spectrum)
         return

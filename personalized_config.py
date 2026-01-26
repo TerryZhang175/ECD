@@ -3,22 +3,31 @@ from __future__ import annotations
 from typing import Optional
 
 try:
-    from personalized_isodec import (
-        IsoDecConfig,
+    from unidec.modules.unidecstructure import IsoDecConfig
+    from unidec.IsoDec.match import (
         calculate_cosinesimilarity as isodec_calculate_cosinesimilarity,
         find_matches as isodec_find_matches,
         find_matched_intensities as isodec_find_matched_intensities,
         make_shifted_peak as isodec_make_shifted_peak,
     )
 except Exception:
-    IsoDecConfig = None
-    isodec_calculate_cosinesimilarity = None
-    isodec_find_matches = None
-    isodec_find_matched_intensities = None
-    isodec_make_shifted_peak = None
+    try:
+        from personalized_isodec import (
+            IsoDecConfig,
+            calculate_cosinesimilarity as isodec_calculate_cosinesimilarity,
+            find_matches as isodec_find_matches,
+            find_matched_intensities as isodec_find_matched_intensities,
+            make_shifted_peak as isodec_make_shifted_peak,
+        )
+    except Exception:
+        IsoDecConfig = None
+        isodec_calculate_cosinesimilarity = None
+        isodec_find_matches = None
+        isodec_find_matched_intensities = None
+        isodec_make_shifted_peak = None
 
 
-filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-11ECD_Rep2/RE0.txt'
+filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-11ECD_Rep2/RE3.txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -26,8 +35,9 @@ filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-1
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "complex_fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
+ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-centroiding).
 
 # Optional: focus on an m/z region of interest.
 # Set to None to use the full scan.
@@ -157,6 +167,7 @@ REL_INTENSITY_CUTOFF = 0.01
 # Precursor mode settings.
 PRECURSOR_MIN_CHARGE = 1
 PRECURSOR_MAX_CHARGE = 10
+PRECURSOR_WINDOW_DA = 5.1
 PRECURSOR_SEARCH_ITERATIONS = 5
 ENABLE_LOCK_MASS = True
 PRECURSOR_CHAIN_TO_FRAGMENTS = True
@@ -170,7 +181,7 @@ def require_isodec_rules() -> None:
     if ENABLE_ISODEC_RULES and IsoDecConfig is None:
         raise ImportError(
             "ENABLE_ISODEC_RULES=True but IsoDec modules could not be imported. "
-            "Install required deps or set ENABLE_ISODEC_RULES=False."
+            "Install UniDec IsoDec deps or set ENABLE_ISODEC_RULES=False."
         )
 
 
@@ -185,8 +196,10 @@ def build_isodec_config() -> Optional[IsoDecConfig]:
     config.minareacovered = float(ISODEC_MIN_AREA_COVERED) if ISODEC_USE_AREA_COVERED else 0.0
     config.mzwindowlb = float(ISODEC_MZ_WINDOW_LB)
     config.mzwindowub = float(ISODEC_MZ_WINDOW_UB)
-    config.plusoneintwindowlb = float(ISODEC_PLUSONE_INT_WINDOW_LB)
-    config.plusoneintwindowub = float(ISODEC_PLUSONE_INT_WINDOW_UB)
+    if hasattr(config, "plusoneintwindowlb"):
+        config.plusoneintwindowlb = float(ISODEC_PLUSONE_INT_WINDOW_LB)
+    if hasattr(config, "plusoneintwindowub"):
+        config.plusoneintwindowub = float(ISODEC_PLUSONE_INT_WINDOW_UB)
     config.minusoneaszero = 1 if ISODEC_MINUSONE_AS_ZERO else 0
     config.isotopethreshold = float(REL_INTENSITY_CUTOFF)
     return config

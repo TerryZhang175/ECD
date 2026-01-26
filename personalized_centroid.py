@@ -3,7 +3,14 @@ from __future__ import annotations
 import numpy as np
 
 import personalized_config as cfg
-from personalized_peakdetect import peakdetect as _peakdetect
+
+try:
+    from unidec.tools import peakdetect as _peakdetect
+except Exception:
+    try:
+        from personalized_peakdetect import peakdetect as _peakdetect
+    except Exception:
+        _peakdetect = None
 
 
 def hill_centroid_window(
@@ -29,7 +36,7 @@ def hill_centroid_window(
         return np.empty((0, 2), dtype=float)
 
     windowed = np.column_stack([spectrum_mz[start:end], spectrum_int[start:end]])
-    if not bool(cfg.ENABLE_HILL_CENTROID) or _peakdetect is None:
+    if not bool(getattr(cfg, "ENABLE_CENTROID", True)) or not bool(cfg.ENABLE_HILL_CENTROID) or _peakdetect is None:
         return windowed
 
     ppm_val = ppm
