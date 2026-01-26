@@ -96,7 +96,7 @@ Expected layout: two columns of `m/z` and `intensity` values.
 Set `PLOT_MODE` in `personalized_config.py` (CLI) or choose a mode in the UI/API:
 
 - `raw`: show the spectrum without theory overlays
-- `precursor`: precursor search and lock-mass calibration
+- `precursor`: precursor search and lock-mass calibration (uses `PRECURSOR_MATCH_TOL_PPM` for matching tolerance)
 - `charge_reduced`: charge-reduced precursor search
 - `fragments`: backbone fragment matching
 - `complex_fragments`: monomer + fragment non-covalent complexes
@@ -147,6 +147,7 @@ curl -X POST http://127.0.0.1:8001/api/run/fragments \
 ## Notes and Tips
 
 - The API overrides `personalized_config.py` values per request using a safe context manager.
+- `PRECURSOR_MATCH_TOL_PPM` (default: 20 ppm) provides a separate matching tolerance for precursor mode, independent of `MATCH_TOL_PPM` used for fragment matching.
 - When `PRECURSOR_CHAIN_TO_FRAGMENTS = True`, fragments and complex fragments runs are calibrated first using precursor lock-mass correction (without plotting in the API path).
 - In the UI, clicking an ion in Fragment Coverage or the Results Table will:
   1) zoom the spectrum around that ion, and

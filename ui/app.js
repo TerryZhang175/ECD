@@ -22,6 +22,7 @@ const disulfideMapInput = document.getElementById('disulfideMap');
 const fragMinChargeInput = document.getElementById('fragMinCharge');
 const fragMaxChargeInput = document.getElementById('fragMaxCharge');
 const matchTolInput = document.getElementById('matchTol');
+const precursorMatchTolInput = document.getElementById('precursorMatchTol');
 const isoDecInput = document.getElementById('isoDec');
 const hTransferInput = document.getElementById('hTransfer');
 const neutralLossInput = document.getElementById('neutralLoss');
@@ -189,6 +190,7 @@ const loadConfig = async () => {
     if (fragMinChargeInput && data.frag_min_charge) fragMinChargeInput.value = data.frag_min_charge;
     if (fragMaxChargeInput && data.frag_max_charge) fragMaxChargeInput.value = data.frag_max_charge;
     if (matchTolInput && data.match_tol_ppm) matchTolInput.value = data.match_tol_ppm;
+    if (precursorMatchTolInput && data.precursor_match_tol_ppm) precursorMatchTolInput.value = data.precursor_match_tol_ppm;
     const cosineDefault =
       data.isodec_css_thresh !== undefined ? data.isodec_css_thresh : data.min_cosine;
     if (cosineSlider && cosineDefault !== undefined) {
@@ -406,6 +408,7 @@ const startRun = async () => {
       frag_min_charge: fragMinChargeInput ? Number(fragMinChargeInput.value) : null,
       frag_max_charge: fragMaxChargeInput ? Number(fragMaxChargeInput.value) : null,
       match_tol_ppm: matchTolInput ? Number(matchTolInput.value) : null,
+      precursor_match_tol_ppm: precursorMatchTolInput ? Number(precursorMatchTolInput.value) : null,
       min_cosine: Number(cosineSlider.value),
       isodec_css_thresh: Number(cosineSlider.value),
       enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,

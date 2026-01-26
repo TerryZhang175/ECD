@@ -243,8 +243,9 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             first_anchor_int = obs_anchor_int
 
         candidate_states = []
+        precursor_tol_ppm = float(getattr(cfg, "PRECURSOR_MATCH_TOL_PPM", cfg.MATCH_TOL_PPM))
         for z, theory in precursor_theories.items():
-            mz_pad = float(cfg.MATCH_TOL_PPM) * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
+            mz_pad = precursor_tol_ppm * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
             base_min = float(theory["mz_min"])
             base_max = float(theory["mz_max"])
             for state, h_shift in state_shifts:
@@ -276,7 +277,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                     local_centroids[:, 1],
                     dist_shifted[:, 0],
                     z=int(z),
-                    match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                    match_tol_ppm=precursor_tol_ppm,
                     peak_mz=obs_mz,
                 )
                 isodec_css = css_similarity(y_obs, dist_shifted[:, 1])

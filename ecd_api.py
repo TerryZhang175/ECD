@@ -181,6 +181,7 @@ class FragmentsRunRequest(BaseModel):
     frag_min_charge: Optional[int] = Field(None, ge=1)
     frag_max_charge: Optional[int] = Field(None, ge=1)
     match_tol_ppm: Optional[float] = Field(None, gt=0)
+    precursor_match_tol_ppm: Optional[float] = Field(None, gt=0, description="Separate ppm tolerance for precursor mode")
     min_cosine: Optional[float] = Field(None, ge=0, le=1)
     isodec_css_thresh: Optional[float] = Field(None, ge=0, le=1)
     copies: Optional[int] = Field(None, ge=1)
@@ -209,6 +210,7 @@ def get_config() -> dict[str, Any]:
         "frag_min_charge": int(cfg.FRAG_MIN_CHARGE),
         "frag_max_charge": int(cfg.FRAG_MAX_CHARGE),
         "match_tol_ppm": float(cfg.MATCH_TOL_PPM),
+        "precursor_match_tol_ppm": float(getattr(cfg, "PRECURSOR_MATCH_TOL_PPM", cfg.MATCH_TOL_PPM)),
         "min_cosine": float(cfg.MIN_COSINE),
         "isodec_css_thresh": float(cfg.ISODEC_CSS_THRESH),
         "copies": int(cfg.COPIES),
@@ -273,6 +275,11 @@ def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[
         _CfgOverride("MZ_MAX", req.mz_max),
         _CfgOverride("EXPORT_FRAGMENTS_CSV", False),
     ]
+    # Use precursor-specific ppm tolerance if provided, otherwise fall back to match_tol_ppm
+    if req.precursor_match_tol_ppm is not None:
+        overrides.append(_CfgOverride("PRECURSOR_MATCH_TOL_PPM", float(req.precursor_match_tol_ppm)))
+    elif req.match_tol_ppm is not None:
+        overrides.append(_CfgOverride("PRECURSOR_MATCH_TOL_PPM", float(req.match_tol_ppm)))
     if req.match_tol_ppm is not None:
         overrides.append(_CfgOverride("MATCH_TOL_PPM", float(req.match_tol_ppm)))
     if req.min_cosine is not None:
@@ -457,10 +464,11 @@ def _run_fragments_impl(
 
 def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = None) -> dict[str, Any]:
     filepath = filepath_override or req.filepath
+    precursor_ppm = req.precursor_match_tol_ppm if req.precursor_match_tol_ppm is not None else req.match_tol_ppm
     logger.info(
-        "run precursor: scan=%s tol_ppm=%s charge=[%s,%s]",
+        "run precursor: scan=%s precursor_tol_ppm=%s charge=[%s,%s]",
         req.scan,
-        req.match_tol_ppm,
+        precursor_ppm,
         req.frag_min_charge,
         req.frag_max_charge,
     )
