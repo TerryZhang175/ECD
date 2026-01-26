@@ -101,7 +101,7 @@ Set `PLOT_MODE` in `personalized_config.py` (CLI) or choose a mode in the UI/API
 - `fragments`: backbone fragment matching
 - `complex_fragments`: monomer + fragment non-covalent complexes
 
-The `diagnose` mode allows detailed analysis of a specific fragment ion to understand why it matched or failed to match.
+The `diagnose` mode allows detailed analysis of a specific fragment ion to understand why it matched or failed to match. When a match is not found, the theoretical m/z is still displayed so you can manually inspect where the peak should appear.
 
 ## API Endpoints
 
