@@ -501,6 +501,10 @@ def diagnose_candidate(
             )
             continue
 
+        # Save theory m/z from dist0 early (before H-transfer processing)
+        dist0_theory_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+        variant_result["expected_theory_mz"] = dist0_theory_mz
+
         sample_mzs = None
         best_pred = None
         best_weights = None
@@ -574,9 +578,11 @@ def diagnose_candidate(
 
             if len(sample_mzs) == 0:
                 variant_result["reason"] = "sample_axis_empty"
+                variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
                 variant_result["diagnostic_steps"].append(
                     {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"}
                 )
+                variant_results.append(variant_result)
                 continue
 
             peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
@@ -673,9 +679,11 @@ def diagnose_candidate(
 
         if sample_mzs is None or best_pred is None or float(np.max(best_pred)) <= 0.0:
             variant_result["reason"] = "theory_empty"
+            variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
             variant_result["diagnostic_steps"].append(
                 {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty theoretical prediction"}
             )
+            variant_results.append(variant_result)
             continue
 
         variant_result["raw_cosine_preanchor"] = float(best_score)
