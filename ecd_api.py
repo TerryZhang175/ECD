@@ -570,6 +570,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         req.frag_max_charge,
     )
     overrides = _build_charge_reduced_overrides(req, filepath)
+    precursor_result = None
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
@@ -577,6 +578,10 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             residues = parse_custom_sequence(cfg.PEPTIDE)
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
+            if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
+                # Calibrate via precursor search without plotting.
+                precursor_result = run_precursor_headless(residues, spectrum, isodec_config)
+                spectrum = np.asarray(precursor_result.get("spectrum"), dtype=float)
             result = run_charge_reduced_headless(residues, spectrum, isodec_config)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -642,6 +647,18 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
 
     logger.info("run charge_reduced complete: count=%s", len(candidates))
 
+    precursor_summary = None
+    if precursor_result:
+        precursor_summary = {
+            "match_found": bool(precursor_result.get("match_found")),
+            "best_charge": precursor_result.get("best_z"),
+            "best_state": precursor_result.get("best_state"),
+            "best_css": _safe_float(precursor_result.get("best_css")),
+            "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
+            "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
+            "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
+        }
+
     return {
         "mode": "charge_reduced",
         "sequence": sequence,
@@ -650,6 +667,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         "candidates": candidates,
         "count": len(candidates),
         "overlays": overlays,
+        "precursor": precursor_summary,
         "spectrum": {
             "mz": spectrum_mz_ds,
             "intensity": spectrum_int_ds,

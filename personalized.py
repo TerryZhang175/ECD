@@ -68,6 +68,8 @@ def main() -> None:
     if mode == "precursor":
         run_precursor_mode(residues, spectrum, isodec_config)
     elif mode == "charge_reduced":
+        if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
+            spectrum = run_precursor_mode(residues, spectrum, isodec_config)
         run_charge_reduced_mode(residues, spectrum, isodec_config)
     elif mode == "fragments" or mode == "complex_fragments":
         if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
