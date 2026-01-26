@@ -1,0 +1,8 @@
+spec,label,formula,mono_mass,avg_mass,z,h_transfer,variant_type,variant_suffix,variant_pass_count,theory_mz,theory_int,obs_mz,ppm,obs_int,within,obs_idx
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2687.588,15.108958837772418,2687.3977,-70.80698380860706,3.272,False,34297
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2688.5913,23.4,2688.5913,0.0,23.4,True,34303
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2689.5946000000004,18.908958493946738,2689.5879,-2.491081741599468,24.29,True,34311
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2690.5979,10.57644652465208,2690.6147,6.2439653282549505,3.75,True,34317
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2691.6012,4.588175678982675,2691.5854,-5.870111813045187,1.917,True,34323
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2692.6045000000004,1.6412272467157567,2692.5293,-27.92834967044831,0.76,True,34330
+c25^1+,c25-OxidizedLoop^1+,"Composition({'H': 215, 'C': 125, 'O': 30, 'N': 35})",2686.63741064985,2688.266009410479,1,0,ss-specific,-OxidizedLoop,1,2693.6078,0.502875181697478,2693.5378,-25.987450734351043,0.9714,True,34340

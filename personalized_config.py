@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/WT 2n5 ConA ECDRE34.txt'
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "diagnose"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -52,10 +52,10 @@ MZ_MAX = None
 # - Phospho: "S[HPO3]" (equivalent to PO3H)
 # - Carbamidomethyl (IAA): "C[C2H3NO]"
 # Bracket contents are interpreted as an elemental formula (not a mass delta).
-PEPTIDE = "KCNTATCATQRLANFLVHSSNNFGAILSSTNVGSNTY"
-COPIES = 2  # 1=monomer, 2=dimer (two copies of the same peptide)
+PEPTIDE = "IRAITKVAKLSWQVLTGKIGPLLQGR"
+COPIES = 1  # 1=monomer, 2=dimer (two copies of the same peptide)
 AMIDATED = True  # C-terminal amidation (adds HN, removes O; delta = H1N1O-1) per copy
-DISULFIDE_BONDS = 2  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
+DISULFIDE_BONDS = 0  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
 # Define disulfide bond pairs (1-based indices)
 # Example: For KCNT... sequence, Cys at positions 2 and 7
 DISULFIDE_MAP = [(2, 7)]
@@ -69,7 +69,7 @@ INTERNAL_DISULFIDES_PER_MONOMER = DISULFIDE_BONDS // COPIES
 ION_TYPES = ("b", "y", "c", "z-dot")  # For ECD you may want ("b","y","c","z-dot") depending on your annotation
 FRAG_MIN_CHARGE = 1
 FRAG_MAX_CHARGE = 6
-MATCH_TOL_PPM = 20
+MATCH_TOL_PPM = 30
 MIN_OBS_REL_INT = 0.0
 MAX_PLOTTED_FRAGMENTS = 40
 LABEL_MATCHES = False
@@ -120,7 +120,7 @@ FRAGMENT_INTENSITY_CAP_VERBOSE = True
 #   DIAGNOSE_ION_SPEC = "c7^2+"
 #   DIAGNOSE_ION_SPEC = "z12-2H2O^3+"
 #   DIAGNOSE_ION_SPEC = "z-dot12-CO"  # will scan charge range if no ^z+ suffix is present
-DIAGNOSE_ION_SPEC = "b4-2H2O^1+"
+DIAGNOSE_ION_SPEC = "c25^1+"
 # Hydrogen transfer degree (H+). Use an integer in {-2,-1,0,1,2}.
 # Set to 0 to enable automatic selection using fragments mode's mixture model
 DIAGNOSE_H_TRANSFER = 0

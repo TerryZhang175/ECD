@@ -269,6 +269,10 @@ def get_disulfide_logic(ion_type: str, frag_len: int, peptide_len: int):
     Returns:
         List of tuples: [(suffix, Composition shift)]
     """
+    # If no disulfide bonds, skip all disulfide-related variants
+    if int(cfg.DISULFIDE_BONDS) == 0:
+        return []
+
     # Determine fragment residue indices (1-based)
     if ion_type.startswith(("a", "b", "c")):
         indices = set(range(1, frag_len + 1))
