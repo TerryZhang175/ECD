@@ -217,7 +217,8 @@ const updateResultsTable = (fragments) => {
     .map((frag) => {
       const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
       const ion = frag.displayLabel || ionFallback;
-      const mz = frag.obsMz != null ? frag.obsMz.toFixed(2) : '';
+      const obsMz = frag.obsMz != null ? frag.obsMz.toFixed(4) : '';
+      const theoryMz = frag.anchorMz != null ? frag.anchorMz.toFixed(4) : '';
       const ppm = frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '';
       const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
@@ -227,7 +228,7 @@ const updateResultsTable = (fragments) => {
       const matchAttr = Number.isFinite(frag._idx) ? ` data-match-idx="${frag._idx}"` : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
-      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${mz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${obsMz}</td>\n        <td>${theoryMz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
     })
     .join('');
   activeResultRow = null;
