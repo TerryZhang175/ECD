@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/Slice A ECD trans 15 lockmass smoothed mz (1)
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "diagnose"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = True  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -120,10 +120,10 @@ FRAGMENT_INTENSITY_CAP_VERBOSE = True
 #   DIAGNOSE_ION_SPEC = "c7^2+"
 #   DIAGNOSE_ION_SPEC = "z12-2H2O^3+"
 #   DIAGNOSE_ION_SPEC = "z-dot12-CO"  # will scan charge range if no ^z+ suffix is present
-DIAGNOSE_ION_SPEC = "z2^1+"
+DIAGNOSE_ION_SPEC = "z5^1+"
 # Hydrogen transfer degree (H+). Use an integer in {-2,-1,0,1,2}.
 # Set to 0 to enable automatic selection using fragments mode's mixture model
-DIAGNOSE_H_TRANSFER = 1
+DIAGNOSE_H_TRANSFER = 0
 # If ion spec has no charge, scan FRAG_MIN_CHARGE..FRAG_MAX_CHARGE and report all.
 DIAGNOSE_SCAN_CHARGES = True
 DIAGNOSE_SHOW_PLOT = True

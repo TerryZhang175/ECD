@@ -1333,8 +1333,11 @@ if (resultsTable) {
 const buildFragShape = (positions, index, length, ionType, fragLenOverride) => {
   const step = positions[index + 1] - positions[index];
   const xStart = positions[index] + step / 2;
+  // Display position: y/z on top (dir=1), b/c on bottom (dir=-1)
+  const displayOnTop = ionType === 'y' || ionType === 'z';
+  const dir = displayOnTop ? 1 : -1;
+  // Fragment length calculation: b/c count from N-term, y/z count from C-term
   const isNterm = ionType === 'b' || ionType === 'c';
-  const dir = isNterm ? 1 : -1;
   const L = 0.3;
   const verticalLen = L;
   const diagonalLen = 2 * L;
