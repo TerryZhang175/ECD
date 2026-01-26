@@ -27,7 +27,7 @@ except Exception:
         isodec_make_shifted_peak = None
 
 
-filepath = '/Users/terry/Downloads/WT 2n5 ConA ECDRE34.txt'
+filepath = '/Users/terry/Downloads/Slice A ECD trans 15 lockmass smoothed mz (1).txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -44,8 +44,8 @@ ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-c
 # Examples:
 #   MZ_MIN, MZ_MAX = 900, 1100
 #   MZ_MIN, MZ_MAX = 300, 2000
-MZ_MIN = 2600
-MZ_MAX = 2700
+MZ_MIN = None
+MZ_MAX = None
 
 # Peptide sequence. Supports chemical-formula mods in brackets, e.g.:
 # - Oxidation: "M[O]"
@@ -68,7 +68,7 @@ INTERNAL_DISULFIDES_PER_MONOMER = DISULFIDE_BONDS // COPIES
 
 ION_TYPES = ("b", "y", "c", "z-dot")  # For ECD you may want ("b","y","c","z-dot") depending on your annotation
 FRAG_MIN_CHARGE = 1
-FRAG_MAX_CHARGE = 6
+FRAG_MAX_CHARGE = 3
 MATCH_TOL_PPM = 30
 MIN_OBS_REL_INT = 0.0
 MAX_PLOTTED_FRAGMENTS = 40

@@ -191,6 +191,7 @@ class FragmentsRunRequest(BaseModel):
     enable_isodec_rules: Optional[bool] = None
     enable_h_transfer: Optional[bool] = None
     enable_neutral_losses: Optional[bool] = None
+    precursor_calibration: Optional[bool] = None
 
 
 class DiagnoseRunRequest(BaseModel):
@@ -239,6 +240,7 @@ def get_config() -> dict[str, Any]:
         "enable_isodec_rules": bool(cfg.ENABLE_ISODEC_RULES),
         "enable_h_transfer": bool(cfg.ENABLE_H_TRANSFER),
         "enable_neutral_losses": bool(cfg.ENABLE_NEUTRAL_LOSSES),
+        "precursor_calibration": bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)),
     }
 
 
@@ -280,6 +282,8 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "
         overrides.append(_CfgOverride("ENABLE_H_TRANSFER", bool(req.enable_h_transfer)))
     if req.enable_neutral_losses is not None:
         overrides.append(_CfgOverride("ENABLE_NEUTRAL_LOSSES", bool(req.enable_neutral_losses)))
+    if req.precursor_calibration is not None:
+        overrides.append(_CfgOverride("PRECURSOR_CHAIN_TO_FRAGMENTS", bool(req.precursor_calibration)))
     return overrides
 
 

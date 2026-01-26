@@ -26,6 +26,7 @@ const precursorMatchTolInput = document.getElementById('precursorMatchTol');
 const isoDecInput = document.getElementById('isoDec');
 const hTransferInput = document.getElementById('hTransfer');
 const neutralLossInput = document.getElementById('neutralLoss');
+const precursorCalibrationInput = document.getElementById('precursorCalibration');
 const coverageLoadButton = document.getElementById('coverageLoadButton');
 const coverageFile = document.getElementById('coverageFile');
 const coverageStatus = document.getElementById('coverageStatus');
@@ -202,6 +203,7 @@ const loadConfig = async () => {
     if (isoDecInput && data.enable_isodec_rules !== undefined) isoDecInput.checked = Boolean(data.enable_isodec_rules);
     if (hTransferInput && data.enable_h_transfer !== undefined) hTransferInput.checked = Boolean(data.enable_h_transfer);
     if (neutralLossInput && data.enable_neutral_losses !== undefined) neutralLossInput.checked = Boolean(data.enable_neutral_losses);
+    if (precursorCalibrationInput && data.precursor_calibration !== undefined) precursorCalibrationInput.checked = Boolean(data.precursor_calibration);
     setChipSelection(data.ion_types || []);
     setCoverageStatus('Config loaded');
   } catch (error) {
@@ -492,6 +494,7 @@ const startRun = async () => {
         enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
         enable_h_transfer: hTransferInput ? hTransferInput.checked : null,
         enable_neutral_losses: neutralLossInput ? neutralLossInput.checked : null,
+        precursor_calibration: precursorCalibrationInput ? precursorCalibrationInput.checked : null,
         copies: copiesInput ? Number(copiesInput.value) : null,
         amidated: amidatedInput ? amidatedInput.checked : null,
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
