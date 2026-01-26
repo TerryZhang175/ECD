@@ -512,32 +512,16 @@ def diagnose_candidate(
         best_score = 0.0
         neutral_score = 0.0
 
+        # Always use mixture model (same as fragments mode)
+        # h_transfer parameter only affects final reporting, not the matching algorithm
         if h_transfer != 0:
             variant_result["diagnostic_steps"].append(
                 {
                     "step": "4. H-transfer mode",
                     "status": "info",
-                    "details": f"Using specified H-transfer: {h_transfer:+d} H+",
+                    "details": f"Requested H-transfer: {h_transfer:+d} H+ (using mixture model for matching)",
                 }
             )
-            hz = float(cfg.H_TRANSFER_MASS) / float(z)
-            dist = dist0.copy()
-            dist[:, 0] += float(h_transfer) * hz
-            sample_mzs = dist[:, 0].copy()
-            best_pred = dist[:, 1].copy()
-
-            peak_mz = float(sample_mzs[np.argmax(best_pred)])
-            y_obs = observed_intensities_isodec(
-                spectrum_mz,
-                spectrum_int,
-                sample_mzs,
-                z=int(z),
-                match_tol_ppm=float(match_tol_ppm),
-                peak_mz=peak_mz,
-            )
-            best_model = f"{h_transfer:+d}H"
-            best_score = css_similarity(y_obs, best_pred)
-            best_weights = {f"{h_transfer:+d}H": 1.0}
         else:
             variant_result["diagnostic_steps"].append(
                 {
@@ -547,135 +531,135 @@ def diagnose_candidate(
                 }
             )
 
-            shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
-            shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
+        shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
+        shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
 
-            dist_p1 = dist0.copy()
-            dist_p1[:, 0] += shift_1
-            dist_m1 = dist0.copy()
-            dist_m1[:, 0] -= shift_1
+        dist_p1 = dist0.copy()
+        dist_p1[:, 0] += shift_1
+        dist_m1 = dist0.copy()
+        dist_m1[:, 0] -= shift_1
 
-            dist_p2 = None
-            dist_m2 = None
-            if allow_2h:
-                dist_p2 = dist0.copy()
-                dist_p2[:, 0] += shift_2
-                dist_m2 = dist0.copy()
-                dist_m2[:, 0] -= shift_2
+        dist_p2 = None
+        dist_m2 = None
+        if allow_2h:
+            dist_p2 = dist0.copy()
+            dist_p2[:, 0] += shift_2
+            dist_m2 = dist0.copy()
+            dist_m2[:, 0] -= shift_2
 
-            dists_for_union = [dist0]
-            if allow_1h:
-                dists_for_union.extend([dist_p1, dist_m1])
-            if allow_2h:
-                dists_for_union.extend([dist_p2, dist_m2])
+        dists_for_union = [dist0]
+        if allow_1h:
+            dists_for_union.extend([dist_p1, dist_m1])
+        if allow_2h:
+            dists_for_union.extend([dist_p2, dist_m2])
 
-            sample_keys, sample_mzs, scale = build_sample_axis(
-                dists_for_union,
-                decimals=6,
-                mz_min=mz_min,
-                mz_max=mz_max,
+        sample_keys, sample_mzs, scale = build_sample_axis(
+            dists_for_union,
+            decimals=6,
+            mz_min=mz_min,
+            mz_max=mz_max,
+        )
+
+        if len(sample_mzs) == 0:
+            variant_result["reason"] = "sample_axis_empty"
+            variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
+            variant_result["diagnostic_steps"].append(
+                {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"}
             )
+            variant_results.append(variant_result)
+            continue
 
-            if len(sample_mzs) == 0:
-                variant_result["reason"] = "sample_axis_empty"
-                variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
-                variant_result["diagnostic_steps"].append(
-                    {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"}
-                )
-                variant_results.append(variant_result)
-                continue
+        peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+        y_obs = observed_intensities_isodec(
+            spectrum_mz,
+            spectrum_int,
+            sample_mzs,
+            z=int(z),
+            match_tol_ppm=float(match_tol_ppm),
+            peak_mz=peak_mz,
+        )
 
-            peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
-            y_obs = observed_intensities_isodec(
+        y0 = vectorize_dist(dist0, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
+        neutral_score_union = css_similarity(y_obs, y0)
+        neutral_score = neutral_score_union
+
+        dist0_neutral = dist0
+        if mz_min is not None or mz_max is not None:
+            mz_min_f = -np.inf if mz_min is None else float(mz_min)
+            mz_max_f = np.inf if mz_max is None else float(mz_max)
+            dist0_neutral = dist0[(dist0[:, 0] >= mz_min_f) & (dist0[:, 0] <= mz_max_f)]
+        if dist0_neutral.size:
+            y_obs_neutral = observed_intensities_isodec(
                 spectrum_mz,
                 spectrum_int,
-                sample_mzs,
+                dist0_neutral[:, 0],
                 z=int(z),
                 match_tol_ppm=float(match_tol_ppm),
                 peak_mz=peak_mz,
             )
+            neutral_score = css_similarity(y_obs_neutral, dist0_neutral[:, 1])
 
-            y0 = vectorize_dist(dist0, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
-            neutral_score_union = css_similarity(y_obs, y0)
-            neutral_score = neutral_score_union
+        best_model = "neutral"
+        best_score = neutral_score_union
+        best_pred = y0
+        best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
 
-            dist0_neutral = dist0
-            if mz_min is not None or mz_max is not None:
-                mz_min_f = -np.inf if mz_min is None else float(mz_min)
-                mz_max_f = np.inf if mz_max is None else float(mz_max)
-                dist0_neutral = dist0[(dist0[:, 0] >= mz_min_f) & (dist0[:, 0] <= mz_max_f)]
-            if dist0_neutral.size:
-                y_obs_neutral = observed_intensities_isodec(
-                    spectrum_mz,
-                    spectrum_int,
-                    dist0_neutral[:, 0],
-                    z=int(z),
-                    match_tol_ppm=float(match_tol_ppm),
-                    peak_mz=peak_mz,
-                )
-                neutral_score = css_similarity(y_obs_neutral, dist0_neutral[:, 1])
+        if allow_1h or allow_2h:
+            yp1 = vectorize_dist(dist_p1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
+            ym1 = vectorize_dist(dist_m1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
+            yp2 = vectorize_dist(dist_p2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
+            ym2 = vectorize_dist(dist_m2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
 
+            comps_plus = [("0", y0)]
+            comps_minus = [("0", y0)]
+            if allow_1h:
+                comps_plus.append(("+H", yp1))
+                comps_minus.append(("-H", ym1))
+            if allow_2h:
+                comps_plus.append(("+2H", yp2))
+                comps_minus.append(("-2H", ym2))
+
+            names_plus, vecs_plus = zip(*comps_plus)
+            w_plus, y_plus, score_plus = fit_simplex_mixture(y_obs, list(vecs_plus))
+            weights_plus = dict(zip(names_plus, w_plus))
+
+            names_minus, vecs_minus = zip(*comps_minus)
+            w_minus, y_minus, score_minus = fit_simplex_mixture(y_obs, list(vecs_minus))
+            weights_minus = dict(zip(names_minus, w_minus))
+
+            if score_plus > best_score:
+                best_model = "+mix"
+                best_score = score_plus
+                best_pred = y_plus
+                best_weights = {
+                    "0": weights_plus.get("0", 0.0),
+                    "+H": weights_plus.get("+H", 0.0),
+                    "+2H": weights_plus.get("+2H", 0.0),
+                    "-H": 0.0,
+                    "-2H": 0.0,
+                }
+
+            if score_minus > best_score:
+                best_model = "-mix"
+                best_score = score_minus
+                best_pred = y_minus
+                best_weights = {
+                    "0": weights_minus.get("0", 0.0),
+                    "+H": 0.0,
+                    "+2H": 0.0,
+                    "-H": weights_minus.get("-H", 0.0),
+                    "-2H": weights_minus.get("-2H", 0.0),
+                }
+
+        rel_improve = (best_score - neutral_score_union) / max(neutral_score_union, 1e-12)
+        if best_model != "neutral" and rel_improve < float(cfg.H_TRANSFER_MIN_REL_IMPROVEMENT):
             best_model = "neutral"
             best_score = neutral_score_union
             best_pred = y0
             best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
 
-            if allow_1h or allow_2h:
-                yp1 = vectorize_dist(dist_p1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
-                ym1 = vectorize_dist(dist_m1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
-                yp2 = vectorize_dist(dist_p2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
-                ym2 = vectorize_dist(dist_m2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
-
-                comps_plus = [("0", y0)]
-                comps_minus = [("0", y0)]
-                if allow_1h:
-                    comps_plus.append(("+H", yp1))
-                    comps_minus.append(("-H", ym1))
-                if allow_2h:
-                    comps_plus.append(("+2H", yp2))
-                    comps_minus.append(("-2H", ym2))
-
-                names_plus, vecs_plus = zip(*comps_plus)
-                w_plus, y_plus, score_plus = fit_simplex_mixture(y_obs, list(vecs_plus))
-                weights_plus = dict(zip(names_plus, w_plus))
-
-                names_minus, vecs_minus = zip(*comps_minus)
-                w_minus, y_minus, score_minus = fit_simplex_mixture(y_obs, list(vecs_minus))
-                weights_minus = dict(zip(names_minus, w_minus))
-
-                if score_plus > best_score:
-                    best_model = "+mix"
-                    best_score = score_plus
-                    best_pred = y_plus
-                    best_weights = {
-                        "0": weights_plus.get("0", 0.0),
-                        "+H": weights_plus.get("+H", 0.0),
-                        "+2H": weights_plus.get("+2H", 0.0),
-                        "-H": 0.0,
-                        "-2H": 0.0,
-                    }
-
-                if score_minus > best_score:
-                    best_model = "-mix"
-                    best_score = score_minus
-                    best_pred = y_minus
-                    best_weights = {
-                        "0": weights_minus.get("0", 0.0),
-                        "+H": 0.0,
-                        "+2H": 0.0,
-                        "-H": weights_minus.get("-H", 0.0),
-                        "-2H": weights_minus.get("-2H", 0.0),
-                    }
-
-            rel_improve = (best_score - neutral_score_union) / max(neutral_score_union, 1e-12)
-            if best_model != "neutral" and rel_improve < float(cfg.H_TRANSFER_MIN_REL_IMPROVEMENT):
-                best_model = "neutral"
-                best_score = neutral_score_union
-                best_pred = y0
-                best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
-
-            if best_model == "neutral":
-                best_score = neutral_score
+        if best_model == "neutral":
+            best_score = neutral_score
 
         if sample_mzs is None or best_pred is None or float(np.max(best_pred)) <= 0.0:
             variant_result["reason"] = "theory_empty"

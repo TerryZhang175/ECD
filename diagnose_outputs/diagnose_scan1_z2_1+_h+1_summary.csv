@@ -1,0 +1,2 @@
+spec,label,formula,mono_mass,avg_mass,ion_type,frag_name,frag_len,z,loss_formula,loss_count,h_transfer,variant_type,variant_suffix,variant_pass_count,ok,reason,raw_cosine_preanchor,anchor_theory_mz,anchor_obs_mz,anchor_ppm,anchor_within_ppm,obs_idx,obs_int,obs_rel_int,isodec_css,isodec_accepted,isodec_local_centroids_n,isodec_matched_peaks_n,isodec_minpeaks_effective,isodec_areacovered,isodec_topthree,match_tol_ppm,min_obs_rel_int,rel_intensity_cutoff,mz_min,mz_max
+z2^1+,z2^1+,,,,z,z2,2,1,,0,1,,,,False,all_disulfide_variants_failed,,,,,False,,,,,False,,,,,,30.0,0.0,0.01,,
