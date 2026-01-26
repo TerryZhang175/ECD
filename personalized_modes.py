@@ -103,6 +103,11 @@ def _find_most_intense_window(
 
 
 def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
+    # Override isodec_config.matchtol with PRECURSOR_MATCH_TOL_PPM for precursor mode
+    precursor_tol_ppm = float(getattr(cfg, "PRECURSOR_MATCH_TOL_PPM", cfg.MATCH_TOL_PPM))
+    if isodec_config is not None and hasattr(isodec_config, "matchtol"):
+        isodec_config.matchtol = precursor_tol_ppm
+
     complex_comp = get_precursor_composition(residues)
     precursor_theories: dict[int, dict] = {}
 
@@ -243,7 +248,6 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             first_anchor_int = obs_anchor_int
 
         candidate_states = []
-        precursor_tol_ppm = float(getattr(cfg, "PRECURSOR_MATCH_TOL_PPM", cfg.MATCH_TOL_PPM))
         for z, theory in precursor_theories.items():
             mz_pad = precursor_tol_ppm * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
             base_min = float(theory["mz_min"])

@@ -27,7 +27,7 @@ except Exception:
         isodec_make_shifted_peak = None
 
 
-filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-11ECD_Rep2/RE3.txt'
+filepath = '/Users/terry/Downloads/WT 2n5 ConA ECDRE34.txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/S20G_04_10-1
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "fragments"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "precursor"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = False  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -52,7 +52,7 @@ MZ_MAX = None
 # - Phospho: "S[HPO3]" (equivalent to PO3H)
 # - Carbamidomethyl (IAA): "C[C2H3NO]"
 # Bracket contents are interpreted as an elemental formula (not a mass delta).
-PEPTIDE = "KCNTATCATQRLANFLVHSGNNFGAILSSTNVGSNTY"
+PEPTIDE = "KCNTATCATQRLANFLVHSSNNFGAILSSTNVGSNTY"
 COPIES = 2  # 1=monomer, 2=dimer (two copies of the same peptide)
 AMIDATED = True  # C-terminal amidation (adds HN, removes O; delta = H1N1O-1) per copy
 DISULFIDE_BONDS = 2  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
@@ -169,7 +169,7 @@ PRECURSOR_MIN_CHARGE = 1
 PRECURSOR_MAX_CHARGE = 10
 PRECURSOR_WINDOW_DA = 5.1
 PRECURSOR_SEARCH_ITERATIONS = 5
-PRECURSOR_MATCH_TOL_PPM = 20  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
+PRECURSOR_MATCH_TOL_PPM = 80  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
 ENABLE_LOCK_MASS = True
 PRECURSOR_CHAIN_TO_FRAGMENTS = True
 
