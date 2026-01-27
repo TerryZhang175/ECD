@@ -20,6 +20,7 @@ def hill_centroid_window(
     lb: float,
     ub: float,
     *,
+    force_hill: bool | None = None,
     ppm: float | None = None,
     window: int | None = None,
     threshold: float | None = None,
@@ -36,7 +37,14 @@ def hill_centroid_window(
         return np.empty((0, 2), dtype=float)
 
     windowed = np.column_stack([spectrum_mz[start:end], spectrum_int[start:end]])
-    if not bool(getattr(cfg, "ENABLE_CENTROID", True)) or not bool(cfg.ENABLE_HILL_CENTROID) or _peakdetect is None:
+
+    # Default behavior: respect global centroid toggles.
+    use_hill = bool(getattr(cfg, "ENABLE_CENTROID", True)) and bool(cfg.ENABLE_HILL_CENTROID)
+    # If requested, force a strategy (raw vs hill centroid), overriding global toggles.
+    if force_hill is not None:
+        use_hill = bool(force_hill)
+
+    if (not use_hill) or _peakdetect is None:
         return windowed
 
     ppm_val = ppm

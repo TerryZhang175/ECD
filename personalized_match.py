@@ -311,10 +311,81 @@ def get_local_centroids_window(
     center_mz: float,
     lb: float,
     ub: float,
+    force_hill: bool | None = None,
 ) -> np.ndarray:
     from personalized_centroid import hill_centroid_window
 
-    return hill_centroid_window(spectrum_mz, spectrum_int, center_mz, lb, ub)
+    return hill_centroid_window(spectrum_mz, spectrum_int, center_mz, lb, ub, force_hill=force_hill)
+
+
+def execute_hybrid_strategy(scoring_func, *args, **kwargs):
+    """
+    Run a scoring function twice (centroid vs raw) and select the better result.
+
+    The scoring function must accept `use_centroid_logic: bool` and return either:
+    - a dict-like result (with score in one of: score/css/isodec_css/final_cosine/raw_cosine_preanchor), or
+    - None if no match.
+
+    The returned dict is annotated with `strategy` = {"centroid","raw"}.
+    """
+
+    def _get_score(d: dict) -> float:
+        if not isinstance(d, dict):
+            return float("-inf")
+        for key in ("score", "css", "isodec_css", "final_cosine", "raw_cosine_preanchor"):
+            v = d.get(key, None)
+            try:
+                if v is None:
+                    continue
+                v_f = float(v)
+                if np.isfinite(v_f):
+                    return v_f
+            except Exception:
+                continue
+        return float("-inf")
+
+    def _is_ok(d: dict) -> bool:
+        if not isinstance(d, dict):
+            return False
+        if "ok" in d:
+            return bool(d.get("ok"))
+        if "accepted" in d:
+            return bool(d.get("accepted"))
+        if "isodec_accepted" in d:
+            return bool(d.get("isodec_accepted"))
+        return False
+
+    res_centroid = scoring_func(*args, **kwargs, use_centroid_logic=True)
+    res_raw = scoring_func(*args, **kwargs, use_centroid_logic=False)
+
+    if res_centroid is None and res_raw is None:
+        return None
+    if res_centroid is not None and res_raw is None:
+        if isinstance(res_centroid, dict):
+            res_centroid["strategy"] = "centroid"
+        return res_centroid
+    if res_centroid is None and res_raw is not None:
+        if isinstance(res_raw, dict):
+            res_raw["strategy"] = "raw"
+        return res_raw
+
+    # Both exist: prefer OK results; then higher score; break ties toward centroid.
+    ok_c = _is_ok(res_centroid)
+    ok_r = _is_ok(res_raw)
+    if ok_c and not ok_r:
+        res_centroid["strategy"] = "centroid"
+        return res_centroid
+    if ok_r and not ok_c:
+        res_raw["strategy"] = "raw"
+        return res_raw
+
+    score_c = _get_score(res_centroid)
+    score_r = _get_score(res_raw)
+    if score_c >= score_r:
+        res_centroid["strategy"] = "centroid"
+        return res_centroid
+    res_raw["strategy"] = "raw"
+    return res_raw
 
 
 def isodec_css_and_accept(
@@ -411,7 +482,44 @@ def diagnose_candidate(
     mz_min,
     mz_max,
     isodec_config: Optional[cfg.IsoDecConfig],
+    use_centroid_logic: bool | None = None,
 ) -> dict:
+    if use_centroid_logic is None:
+        # Self-managed hybrid strategy wrapper.
+        def _score(*, use_centroid_logic: bool):
+            return diagnose_candidate(
+                residues=residues,
+                ion_type=ion_type,
+                frag_len=frag_len,
+                z=z,
+                loss_formula=loss_formula,
+                loss_count=loss_count,
+                h_transfer=h_transfer,
+                spectrum_mz=spectrum_mz,
+                spectrum_int=spectrum_int,
+                match_tol_ppm=match_tol_ppm,
+                min_obs_rel_int=min_obs_rel_int,
+                rel_intensity_cutoff=rel_intensity_cutoff,
+                mz_min=mz_min,
+                mz_max=mz_max,
+                isodec_config=isodec_config,
+                use_centroid_logic=use_centroid_logic,
+            )
+
+        best = execute_hybrid_strategy(_score)
+        # Fallback to empty result shape if both strategies failed.
+        return best if isinstance(best, dict) else {
+            "ion_type": ion_type,
+            "frag_len": int(frag_len),
+            "z": int(z),
+            "loss_formula": loss_formula,
+            "loss_count": int(loss_count),
+            "h_transfer": int(h_transfer),
+            "ok": False,
+            "reason": "no_result",
+            "diagnostic_steps": [],
+        }
+
     result = {
         "ion_type": ion_type,
         "frag_len": int(frag_len),
@@ -433,6 +541,7 @@ def diagnose_candidate(
     series = ion_series(ion_type)
     allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_1H))
     allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_2H))
+    result["strategy"] = "centroid" if bool(use_centroid_logic) else "raw"
 
     variant_results: list[dict] = []
 
@@ -719,6 +828,7 @@ def diagnose_candidate(
                 center_mz=mz_candidate,
                 lb=-anchor_window,
                 ub=anchor_window,
+                force_hill=bool(use_centroid_logic),
             )
             if isinstance(local_centroids, np.ndarray) and local_centroids.size:
                 best_local_idx = int(np.argmax(local_centroids[:, 1]))
@@ -829,7 +939,12 @@ def diagnose_candidate(
         isodec_css = float(best_score)
         if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
             local_centroids = get_local_centroids_window(
-                spectrum_mz, spectrum_int, obs_mz, isodec_config.mzwindowlb, isodec_config.mzwindowub
+                spectrum_mz,
+                spectrum_int,
+                obs_mz,
+                isodec_config.mzwindowlb,
+                isodec_config.mzwindowub,
+                force_hill=bool(use_centroid_logic),
             )
             accepted, isodec_css, shifted_peak = isodec_css_and_accept(
                 local_centroids, dist_plot, z=z, peakmz=obs_mz, config=isodec_config

@@ -7,6 +7,7 @@ import personalized_config as cfg
 from personalized_match import (
     compute_fragment_intensity_cap,
     diagnose_candidate,
+    execute_hybrid_strategy,
     get_local_centroids_window,
     isodec_css_and_accept,
     match_theory_peaks,
@@ -229,84 +230,96 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         windowed = work_spectrum[start_idx:end_idx]
         raw_obs_mz = float(windowed[np.argmax(windowed[:, 1]), 0])
 
-        local_centroids = get_local_centroids_window(
-            work_spectrum[:, 0],
-            work_spectrum[:, 1],
-            raw_obs_mz,
-            lb=window_min - raw_obs_mz,
-            ub=window_max - raw_obs_mz,
-        )
-        if isinstance(local_centroids, np.ndarray) and local_centroids.size:
-            centroid_idx = int(np.argmax(local_centroids[:, 1]))
-            obs_mz = float(local_centroids[centroid_idx, 0])
-            obs_anchor_int = float(local_centroids[centroid_idx, 1])
-        else:
-            obs_mz = raw_obs_mz
-            local_centroids = windowed
-            obs_anchor_int = float(windowed[np.argmax(windowed[:, 1]), 1]) if windowed.size else 0.0
-        if first_anchor_int is None:
-            first_anchor_int = obs_anchor_int
+        def _score_precursor_window(*, use_centroid_logic: bool):
+            # Get local peaks/centroids under a forced strategy.
+            local = get_local_centroids_window(
+                work_spectrum[:, 0],
+                work_spectrum[:, 1],
+                raw_obs_mz,
+                lb=window_min - raw_obs_mz,
+                ub=window_max - raw_obs_mz,
+                force_hill=bool(use_centroid_logic),
+            )
+            if not isinstance(local, np.ndarray) or local.size == 0:
+                local = windowed
+            if local.ndim != 2 or local.shape[1] != 2:
+                return None
 
-        candidate_states = []
-        for z, theory in precursor_theories.items():
-            mz_pad = precursor_tol_ppm * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
-            base_min = float(theory["mz_min"])
-            base_max = float(theory["mz_max"])
-            for state, h_shift in state_shifts:
-                shift_mz = (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
-                mz_min = base_min + shift_mz - mz_pad
-                mz_max = base_max + shift_mz + mz_pad
-                if mz_min <= obs_mz <= mz_max:
-                    candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
+            # Anchor observation: highest peak under this strategy.
+            idx = int(np.argmax(local[:, 1]))
+            obs_mz = float(local[idx, 0])
+            obs_anchor_int = float(local[idx, 1])
 
-        best_candidate = None
-        for z, state, h_shift, shift_mz in candidate_states:
-            dist = precursor_theories[z]["dist"]
-            if h_shift:
-                dist_shifted = dist.copy()
-                dist_shifted[:, 0] += shift_mz
-            else:
-                dist_shifted = dist
-            theory_mz = float(precursor_theories[z]["anchor_mz"]) + float(shift_mz)
-            obs_mz_eval = float(obs_mz)
-            if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
-                accepted, isodec_css, shifted_peak = isodec_css_and_accept(
-                    local_centroids, dist_shifted, z=z, peakmz=obs_mz, config=isodec_config
-                )
-                if shifted_peak is not None:
-                    obs_mz_eval = float(shifted_peak)
-            else:
-                y_obs = observed_intensities_isodec(
-                    local_centroids[:, 0],
-                    local_centroids[:, 1],
-                    dist_shifted[:, 0],
-                    z=int(z),
-                    match_tol_ppm=precursor_tol_ppm,
-                    peak_mz=obs_mz,
-                )
-                isodec_css = css_similarity(y_obs, dist_shifted[:, 1])
-                accepted = isodec_css >= float(cfg.MIN_COSINE)
+            candidate_states = []
+            for z, theory in precursor_theories.items():
+                mz_pad = precursor_tol_ppm * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
+                base_min = float(theory["mz_min"])
+                base_max = float(theory["mz_max"])
+                for state, h_shift in state_shifts:
+                    shift_mz = (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+                    mz_min = base_min + shift_mz - mz_pad
+                    mz_max = base_max + shift_mz + mz_pad
+                    if mz_min <= obs_mz <= mz_max:
+                        candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
 
-            ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
-            dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
-            candidate = {
-                "charge": int(z),
-                "state": str(state),
-                "obs_mz": float(obs_mz_eval),
-                "anchor_theory_mz": theory_mz,
-                "ppm": float(ppm),
-                "css": float(isodec_css),
-                "accepted": bool(accepted),
-                "iteration": int(iteration),
-                "dist": dist_plot,
-            }
-            prev = best_by_charge.get(int(z))
-            if prev is None or float(candidate["css"]) > float(prev.get("css", -1.0)):
-                best_by_charge[int(z)] = candidate
+            best_candidate = None
+            for z, state, h_shift, shift_mz in candidate_states:
+                dist = precursor_theories[z]["dist"]
+                if h_shift:
+                    dist_shifted = dist.copy()
+                    dist_shifted[:, 0] += shift_mz
+                else:
+                    dist_shifted = dist
+                theory_mz = float(precursor_theories[z]["anchor_mz"]) + float(shift_mz)
+                obs_mz_eval = float(obs_mz)
+                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                    accepted, isodec_css, shifted_peak = isodec_css_and_accept(
+                        local, dist_shifted, z=z, peakmz=obs_mz, config=isodec_config
+                    )
+                    if shifted_peak is not None:
+                        obs_mz_eval = float(shifted_peak)
+                else:
+                    y_obs = observed_intensities_isodec(
+                        local[:, 0],
+                        local[:, 1],
+                        dist_shifted[:, 0],
+                        z=int(z),
+                        match_tol_ppm=precursor_tol_ppm,
+                        peak_mz=obs_mz,
+                    )
+                    isodec_css = css_similarity(y_obs, dist_shifted[:, 1])
+                    accepted = isodec_css >= float(cfg.MIN_COSINE)
 
-            if accepted and isodec_css >= float(cfg.MIN_COSINE):
-                if best_candidate is None or float(candidate["css"]) > float(best_candidate.get("css", -1.0)):
-                    best_candidate = candidate
+                ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
+                dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
+                candidate = {
+                    "charge": int(z),
+                    "state": str(state),
+                    "obs_mz": float(obs_mz_eval),
+                    "anchor_theory_mz": theory_mz,
+                    "ppm": float(ppm),
+                    "css": float(isodec_css),
+                    "accepted": bool(accepted),
+                    "iteration": int(iteration),
+                    "dist": dist_plot,
+                    "obs_anchor_int": float(obs_anchor_int),
+                }
+                prev = best_by_charge.get(int(z))
+                if prev is None or float(candidate["css"]) > float(prev.get("css", -1.0)):
+                    best_by_charge[int(z)] = candidate
+
+                if accepted and isodec_css >= float(cfg.MIN_COSINE):
+                    if best_candidate is None or float(candidate["css"]) > float(best_candidate.get("css", -1.0)):
+                        best_candidate = candidate
+
+            return best_candidate
+
+        best_candidate = execute_hybrid_strategy(_score_precursor_window)
+        if best_candidate is not None and first_anchor_int is None:
+            try:
+                first_anchor_int = float(best_candidate.get("obs_anchor_int", 0.0))
+            except Exception:
+                first_anchor_int = 0.0
 
         if best_candidate is not None:
             match_found = True
@@ -318,8 +331,10 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             best_theory_dist = best_candidate["dist"]
             shift_ppm = ((best_obs_mz - best_theory_mz) / best_theory_mz) * 1e6 if best_theory_mz else 0.0
             state_label = f" ({best_state})" if best_state and best_state != "0" else ""
+            strat = best_candidate.get("strategy")
+            strat_label = f" [{strat}]" if strat else ""
             print(
-                f"Precursor found in iteration {iteration}: z={best_z}+{state_label} "
+                f"Precursor found in iteration {iteration}: z={best_z}+{state_label}{strat_label} "
                 f"m/z={best_obs_mz:.4f} css={best_css:.3f}"
             )
             break
@@ -438,79 +453,89 @@ def run_charge_reduced_headless(residues, spectrum, isodec_config) -> dict:
             window_idx = np.where(window_mask)[0]
             obs_anchor_mz = float(spectrum_mz[window_idx[np.argmax(spectrum_int[window_idx])]])
 
-            local_centroids = get_local_centroids_window(
-                spectrum_mz, spectrum_int, center_mz=obs_anchor_mz, lb=-3.0, ub=3.0
-            )
-            if not isinstance(local_centroids, np.ndarray) or local_centroids.size == 0:
-                continue
-            cent_mz = local_centroids[:, 0]
-            cent_int = local_centroids[:, 1]
+            def _score_cr(*, use_centroid_logic: bool):
+                local = get_local_centroids_window(
+                    spectrum_mz,
+                    spectrum_int,
+                    center_mz=obs_anchor_mz,
+                    lb=-3.0,
+                    ub=3.0,
+                    force_hill=bool(use_centroid_logic),
+                )
+                if not isinstance(local, np.ndarray) or local.size == 0:
+                    return None
+                cent_mz = local[:, 0]
+                cent_int = local[:, 1]
 
-            best_candidate = None
-            for state, h_shift in state_shifts:
-                dist = dist0.copy()
-                dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+                best_candidate = None
+                for state, h_shift in state_shifts:
+                    dist = dist0.copy()
+                    dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
 
-                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
-                    accepted, css, shifted_peak = isodec_css_and_accept(
-                        local_centroids, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                    if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                        accepted, css, shifted_peak = isodec_css_and_accept(
+                            local, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                        )
+                    else:
+                        y_obs = observed_intensities_isodec(
+                            cent_mz,
+                            cent_int,
+                            dist[:, 0],
+                            z=int(z),
+                            match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                            peak_mz=obs_anchor_mz,
+                        )
+                        css = css_similarity(y_obs, dist[:, 1])
+                        accepted = css >= float(cfg.MIN_COSINE)
+                        shifted_peak = None
+
+                    if not accepted or css < float(cfg.MIN_COSINE):
+                        continue
+
+                    obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
+                    obs_idx = nearest_peak_index(cent_mz, obs_mz)
+                    obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+
+                    dist_full = dist.copy()
+                    dist_plot = dist.copy()
+                    max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
+                    if max_plot > 0 and obs_int > 0:
+                        dist_plot[:, 1] *= obs_int / max_plot
+                    keep = (
+                        dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF)
+                        if max_plot > 0
+                        else dist_plot[:, 1] > 0
                     )
-                else:
-                    y_obs = observed_intensities_isodec(
+                    dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+
+                    theory_matches = match_theory_peaks(
                         cent_mz,
                         cent_int,
-                        dist[:, 0],
-                        z=int(z),
-                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
-                        peak_mz=obs_anchor_mz,
+                        dist_full[:, 0],
+                        tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        theory_int=dist_full[:, 1],
                     )
-                    css = css_similarity(y_obs, dist[:, 1])
-                    accepted = css >= float(cfg.MIN_COSINE)
-                    shifted_peak = None
 
-                if not accepted or css < float(cfg.MIN_COSINE):
-                    continue
+                    candidate = {
+                        "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
+                        "target": label,
+                        "z": int(z),
+                        "state": state,
+                        "css": float(css),
+                        "obs_mz": obs_mz,
+                        "obs_int": obs_int,
+                        "dist_full": dist_full,
+                        "dist": dist_plot,
+                        "theory_matches": theory_matches,
+                        "color": color,
+                    }
 
-                obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
-                obs_idx = nearest_peak_index(cent_mz, obs_mz)
-                obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+                    if best_candidate is None or candidate["css"] > best_candidate["css"]:
+                        best_candidate = candidate
 
-                dist_full = dist.copy()
-                dist_plot = dist.copy()
-                max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
-                if max_plot > 0 and obs_int > 0:
-                    dist_plot[:, 1] *= obs_int / max_plot
-                keep = (
-                    dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF)
-                    if max_plot > 0
-                    else dist_plot[:, 1] > 0
-                )
-                dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+                return best_candidate
 
-                theory_matches = match_theory_peaks(
-                    cent_mz,
-                    cent_int,
-                    dist_full[:, 0],
-                    tol_ppm=float(cfg.MATCH_TOL_PPM),
-                    theory_int=dist_full[:, 1],
-                )
-
-                candidate = {
-                    "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
-                    "target": label,
-                    "z": int(z),
-                    "state": state,
-                    "css": float(css),
-                    "obs_mz": obs_mz,
-                    "obs_int": obs_int,
-                    "dist_full": dist_full,
-                    "dist": dist_plot,
-                    "theory_matches": theory_matches,
-                    "color": color,
-                }
-
-                if best_candidate is None or candidate["css"] > best_candidate["css"]:
-                    best_candidate = candidate
+            best_candidate = execute_hybrid_strategy(_score_cr)
 
             if best_candidate is not None:
                 matches.append(best_candidate)
@@ -568,75 +593,89 @@ def run_charge_reduced_mode(residues, spectrum, isodec_config) -> None:
             window_idx = np.where(window_mask)[0]
             obs_anchor_mz = float(spectrum_mz[window_idx[np.argmax(spectrum_int[window_idx])]])
 
-            local_centroids = get_local_centroids_window(
-                spectrum_mz, spectrum_int, center_mz=obs_anchor_mz, lb=-3.0, ub=3.0
-            )
-            if not isinstance(local_centroids, np.ndarray) or local_centroids.size == 0:
-                continue
-            cent_mz = local_centroids[:, 0]
-            cent_int = local_centroids[:, 1]
+            def _score_cr(*, use_centroid_logic: bool):
+                local = get_local_centroids_window(
+                    spectrum_mz,
+                    spectrum_int,
+                    center_mz=obs_anchor_mz,
+                    lb=-3.0,
+                    ub=3.0,
+                    force_hill=bool(use_centroid_logic),
+                )
+                if not isinstance(local, np.ndarray) or local.size == 0:
+                    return None
+                cent_mz = local[:, 0]
+                cent_int = local[:, 1]
 
-            best_candidate = None
-            for state, h_shift in state_shifts:
-                dist = dist0.copy()
-                dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
+                best_candidate = None
+                for state, h_shift in state_shifts:
+                    dist = dist0.copy()
+                    dist[:, 0] += (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
 
-                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
-                    accepted, css, shifted_peak = isodec_css_and_accept(
-                        local_centroids, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                    if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                        accepted, css, shifted_peak = isodec_css_and_accept(
+                            local, dist, z=z, peakmz=obs_anchor_mz, config=isodec_config
+                        )
+                    else:
+                        y_obs = observed_intensities_isodec(
+                            cent_mz,
+                            cent_int,
+                            dist[:, 0],
+                            z=int(z),
+                            match_tol_ppm=float(cfg.MATCH_TOL_PPM),
+                            peak_mz=obs_anchor_mz,
+                        )
+                        css = css_similarity(y_obs, dist[:, 1])
+                        accepted = css >= float(cfg.MIN_COSINE)
+                        shifted_peak = None
+
+                    if not accepted or css < float(cfg.MIN_COSINE):
+                        continue
+
+                    obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
+                    obs_idx = nearest_peak_index(cent_mz, obs_mz)
+                    obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+
+                    dist_full = dist.copy()
+                    dist_plot = dist.copy()
+                    max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
+                    if max_plot > 0 and obs_int > 0:
+                        dist_plot[:, 1] *= obs_int / max_plot
+                    keep = (
+                        dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF)
+                        if max_plot > 0
+                        else dist_plot[:, 1] > 0
                     )
-                else:
-                    y_obs = observed_intensities_isodec(
+                    dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+
+                    theory_matches = match_theory_peaks(
                         cent_mz,
                         cent_int,
-                        dist[:, 0],
-                        z=int(z),
-                        match_tol_ppm=float(cfg.MATCH_TOL_PPM),
-                        peak_mz=obs_anchor_mz,
+                        dist_full[:, 0],
+                        tol_ppm=float(cfg.MATCH_TOL_PPM),
+                        theory_int=dist_full[:, 1],
                     )
-                    css = css_similarity(y_obs, dist[:, 1])
-                    accepted = css >= float(cfg.MIN_COSINE)
-                    shifted_peak = None
 
-                if not accepted or css < float(cfg.MIN_COSINE):
-                    continue
+                    candidate = {
+                        "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
+                        "target": label,
+                        "z": int(z),
+                        "state": state,
+                        "css": float(css),
+                        "obs_mz": obs_mz,
+                        "obs_int": obs_int,
+                        "dist_full": dist_full,
+                        "dist": dist_plot,
+                        "theory_matches": theory_matches,
+                        "color": color,
+                    }
 
-                obs_mz = float(shifted_peak) if shifted_peak is not None else float(obs_anchor_mz)
-                obs_idx = nearest_peak_index(cent_mz, obs_mz)
-                obs_int = float(cent_int[obs_idx]) if len(cent_int) else 0.0
+                    if best_candidate is None or candidate["css"] > best_candidate["css"]:
+                        best_candidate = candidate
 
-                dist_full = dist.copy()
-                dist_plot = dist.copy()
-                max_plot = float(np.max(dist_plot[:, 1])) if dist_plot.size else 0.0
-                if max_plot > 0 and obs_int > 0:
-                    dist_plot[:, 1] *= obs_int / max_plot
-                keep = dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF) if max_plot > 0 else dist_plot[:, 1] > 0
-                dist_plot = dist_plot[keep] if dist_plot.size else dist_plot
+                return best_candidate
 
-                theory_matches = match_theory_peaks(
-                    cent_mz,
-                    cent_int,
-                    dist_full[:, 0],
-                    tol_ppm=float(cfg.MATCH_TOL_PPM),
-                    theory_int=dist_full[:, 1],
-                )
-
-                candidate = {
-                    "label": f"{label}^{z}+ ({state}) | css={float(css):.3f}",
-                    "target": label,
-                    "z": int(z),
-                    "state": state,
-                    "css": float(css),
-                    "obs_mz": obs_mz,
-                    "obs_int": obs_int,
-                    "dist_full": dist_full,
-                    "dist": dist_plot,
-                    "theory_matches": theory_matches,
-                    "color": color,
-                }
-
-                if best_candidate is None or candidate["css"] > best_candidate["css"]:
-                    best_candidate = candidate
+            best_candidate = execute_hybrid_strategy(_score_cr)
 
             if best_candidate is not None:
                 matches.append(best_candidate)
@@ -849,6 +888,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 z: int,
                 variant_suffix: str,
                 variant_type: str,
+                use_centroid_logic: bool = True,
             ):
                 try:
                     dist0 = theoretical_isodist_from_comp(loss_comp, z)
@@ -995,6 +1035,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         center_mz=mz_candidate,
                         lb=-anchor_window,
                         ub=anchor_window,
+                        force_hill=bool(use_centroid_logic),
                     )
                     if isinstance(local_centroids, np.ndarray) and local_centroids.size:
                         best_local_idx = int(np.argmax(local_centroids[:, 1]))
@@ -1044,6 +1085,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         obs_mz,
                         isodec_config.mzwindowlb,
                         isodec_config.mzwindowub,
+                        force_hill=bool(use_centroid_logic),
                     )
                     accepted, isodec_css, shifted_peak = isodec_css_and_accept(
                         local_centroids, dist_plot, z=z, peakmz=obs_mz, config=isodec_config
@@ -1120,6 +1162,15 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         variant_suffix,
                         variant_type,
                     )
+                    neutral_match = execute_hybrid_strategy(
+                        evaluate_candidate,
+                        frag_id_base,
+                        "",
+                        variant_comp,
+                        z,
+                        variant_suffix,
+                        variant_type,
+                    )
                     if neutral_match is not None:
                         neutral_candidates.append(neutral_match)
 
@@ -1162,6 +1213,15 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     if not loss_suffix:
                         continue
                     loss_match = evaluate_candidate(
+                        frag_id_base,
+                        loss_suffix,
+                        loss_comp,
+                        z,
+                        best_suffix,
+                        variant_type,
+                    )
+                    loss_match = execute_hybrid_strategy(
+                        evaluate_candidate,
                         frag_id_base,
                         loss_suffix,
                         loss_comp,

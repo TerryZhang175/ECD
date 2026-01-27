@@ -151,6 +151,11 @@ curl -X POST http://127.0.0.1:8001/api/run/fragments \
 - The API overrides `personalized_config.py` values per request using a safe context manager.
 - `PRECURSOR_MATCH_TOL_PPM` (default: 20 ppm) provides a separate matching tolerance for precursor mode, independent of `MATCH_TOL_PPM` used for fragment matching.
 - When `PRECURSOR_CHAIN_TO_FRAGMENTS = True`, fragments and complex fragments runs are calibrated first using precursor lock-mass correction (without plotting in the API path).
+- **Hybrid raw vs centroid strategy**: matching can be evaluated in two strategies:
+  - **raw**: use the original points in a local window (no additional centroiding)
+  - **centroid**: apply Hill centroiding (`peakdetect`) in the local window
+
+  A small helper (`execute_hybrid_strategy`) can run both strategies and keep the better-scoring result. This is useful because some files are already centroided (double-centroiding can shift or drop peaks), while other files remain profile-like (benefiting from centroiding).
 - In the UI, clicking an ion in Fragment Coverage or the Results Table will:
   1) zoom the spectrum around that ion, and
   2) temporarily show only that ion's theoretical peaks.
