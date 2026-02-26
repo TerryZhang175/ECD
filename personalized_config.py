@@ -175,6 +175,19 @@ PRECURSOR_MAX_CHARGE = 10
 PRECURSOR_WINDOW_DA = 5.1
 PRECURSOR_SEARCH_ITERATIONS = 5
 PRECURSOR_MATCH_TOL_PPM = 40  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
+# Robust precursor matching (multi-anchor + composite score)
+PRECURSOR_ANCHOR_TOP_K = 5
+PRECURSOR_MIN_COVERAGE = 0.30
+PRECURSOR_MAX_ANCHOR_ABS_PPM = PRECURSOR_MATCH_TOL_PPM * 1.5
+PRECURSOR_MAX_RESIDUAL_RMSE_PPM = PRECURSOR_MATCH_TOL_PPM
+PRECURSOR_PPM_SIGMA = PRECURSOR_MATCH_TOL_PPM
+PRECURSOR_SPACING_SIGMA_DA = None  # None => auto from precursor m/z and PRECURSOR_MATCH_TOL_PPM
+PRECURSOR_ENABLE_AMBIGUITY_GUARD = True
+PRECURSOR_AMBIGUITY_MARGIN = 0.03
+PRECURSOR_SCORE_W_CSS = 0.45
+PRECURSOR_SCORE_W_COVERAGE = 0.25
+PRECURSOR_SCORE_W_PPM = 0.20
+PRECURSOR_SCORE_W_SPACING = 0.10
 ENABLE_LOCK_MASS = True
 # Enable precursor lock-mass calibration before fragments/complex_fragments/charge_reduced modes.
 # When True, the spectrum is first searched for the precursor ion, and if found, all m/z values

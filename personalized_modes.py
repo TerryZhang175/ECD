@@ -189,6 +189,172 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         dist_scaled[:, 1] *= float(obs_int) / max_theory
         return dist_scaled
 
+    score_w_css = float(getattr(cfg, "PRECURSOR_SCORE_W_CSS", 0.45))
+    score_w_cov = float(getattr(cfg, "PRECURSOR_SCORE_W_COVERAGE", 0.25))
+    score_w_ppm = float(getattr(cfg, "PRECURSOR_SCORE_W_PPM", 0.20))
+    score_w_spacing = float(getattr(cfg, "PRECURSOR_SCORE_W_SPACING", 0.10))
+    score_w_sum = score_w_css + score_w_cov + score_w_ppm + score_w_spacing
+    if score_w_sum <= 0:
+        score_w_css, score_w_cov, score_w_ppm, score_w_spacing = 0.45, 0.25, 0.20, 0.10
+    else:
+        score_w_css /= score_w_sum
+        score_w_cov /= score_w_sum
+        score_w_ppm /= score_w_sum
+        score_w_spacing /= score_w_sum
+
+    anchor_top_k = int(getattr(cfg, "PRECURSOR_ANCHOR_TOP_K", 5))
+    if anchor_top_k <= 0:
+        anchor_top_k = 1
+    min_coverage = float(getattr(cfg, "PRECURSOR_MIN_COVERAGE", 0.30))
+    max_anchor_abs_ppm = float(getattr(cfg, "PRECURSOR_MAX_ANCHOR_ABS_PPM", precursor_tol_ppm * 1.5))
+    max_residual_rmse_ppm = float(getattr(cfg, "PRECURSOR_MAX_RESIDUAL_RMSE_PPM", precursor_tol_ppm))
+    ppm_sigma = float(getattr(cfg, "PRECURSOR_PPM_SIGMA", precursor_tol_ppm))
+    if ppm_sigma <= 0:
+        ppm_sigma = max(precursor_tol_ppm, 1.0)
+    ambiguity_margin = float(getattr(cfg, "PRECURSOR_AMBIGUITY_MARGIN", 0.03))
+    ambiguity_guard = bool(getattr(cfg, "PRECURSOR_ENABLE_AMBIGUITY_GUARD", True))
+
+    def _build_anchor_indices(local: np.ndarray, target_mz: float, top_k: int, tol_ppm: float) -> list[int]:
+        if local.ndim != 2 or local.shape[0] == 0:
+            return []
+        local_mz = np.asarray(local[:, 0], dtype=float)
+        local_int = np.asarray(local[:, 1], dtype=float)
+        indices: list[int] = []
+
+        nearest_idx = int(np.argmin(np.abs(local_mz - float(target_mz))))
+        tol_da = abs(float(target_mz)) * float(tol_ppm) * 1e-6 if float(target_mz) > 0 else 0.0
+        if tol_da > 0:
+            in_tol = np.where(np.abs(local_mz - float(target_mz)) <= tol_da)[0]
+            if in_tol.size:
+                idx_sorted = in_tol[np.argsort(np.abs(local_mz[in_tol] - float(target_mz)))]
+                for idx in idx_sorted[:top_k]:
+                    indices.append(int(idx))
+        if nearest_idx not in indices:
+            indices.append(nearest_idx)
+
+        top_int_idx = np.argsort(local_int)[::-1]
+        for idx in top_int_idx[:top_k]:
+            i = int(idx)
+            if i not in indices:
+                indices.append(i)
+        return indices
+
+    def _match_theory_local(
+        local: np.ndarray,
+        dist_shifted: np.ndarray,
+        shift_da: float,
+        tol_ppm: float,
+    ) -> list[dict]:
+        local_mz = np.asarray(local[:, 0], dtype=float)
+        local_int = np.asarray(local[:, 1], dtype=float)
+        theory_mz = np.asarray(dist_shifted[:, 0], dtype=float)
+        theory_int = np.asarray(dist_shifted[:, 1], dtype=float)
+        pred_mz = theory_mz + float(shift_da)
+
+        used = np.zeros(local_mz.shape[0], dtype=bool)
+        last_local_idx = -1
+        rows: list[dict] = []
+        for i in range(pred_mz.shape[0]):
+            mz_pred = float(pred_mz[i])
+            delta = abs(mz_pred) * float(tol_ppm) * 1e-6 if mz_pred > 0 else 0.0
+            low = mz_pred - delta
+            high = mz_pred + delta
+            start_idx = int(np.searchsorted(local_mz, low, side="left"))
+            end_idx = int(np.searchsorted(local_mz, high, side="right"))
+            if end_idx <= start_idx:
+                continue
+            start_idx = max(start_idx, last_local_idx + 1)
+            if end_idx <= start_idx:
+                continue
+            cands = np.arange(start_idx, end_idx, dtype=int)
+            if cands.size == 0:
+                continue
+            cands = cands[~used[cands]]
+            if cands.size == 0:
+                continue
+            pick = int(cands[np.argmin(np.abs(local_mz[cands] - mz_pred))])
+            used[pick] = True
+            last_local_idx = pick
+            mz_obs = float(local_mz[pick])
+            mz_theory = float(theory_mz[i])
+            residual_da = mz_obs - mz_pred
+            residual_ppm = (residual_da / mz_theory) * 1e6 if mz_theory else 0.0
+            rows.append(
+                {
+                    "theory_idx": int(i),
+                    "theory_mz": mz_theory,
+                    "theory_int": float(theory_int[i]),
+                    "pred_mz": mz_pred,
+                    "obs_idx": int(pick),
+                    "obs_mz": mz_obs,
+                    "obs_int": float(local_int[pick]),
+                    "residual_da": float(residual_da),
+                    "residual_ppm": float(residual_ppm),
+                }
+            )
+        return rows
+
+    def _composite_components(
+        *,
+        css: float,
+        matches: list[dict],
+        dist_shifted: np.ndarray,
+        anchor_ppm_abs: float,
+        anchor_theory_mz: float,
+    ) -> dict:
+        css_val = float(np.clip(css, 0.0, 1.0))
+        theory_int = np.asarray(dist_shifted[:, 1], dtype=float)
+        theory_sum = float(np.sum(theory_int)) if theory_int.size else 0.0
+        if theory_sum > 0 and matches:
+            matched_sum = float(sum(max(0.0, float(r.get("theory_int", 0.0))) for r in matches))
+            coverage = float(np.clip(matched_sum / theory_sum, 0.0, 1.0))
+        else:
+            coverage = 0.0
+
+        if matches:
+            weights = np.array([max(float(r.get("theory_int", 0.0)), 1e-12) for r in matches], dtype=float)
+            residual_ppm = np.array([float(r.get("residual_ppm", 0.0)) for r in matches], dtype=float)
+            ppm_rmse = float(np.sqrt(np.average(residual_ppm * residual_ppm, weights=weights)))
+        else:
+            ppm_rmse = float("inf")
+
+        residual_score = 0.0 if not np.isfinite(ppm_rmse) else float(np.exp(-ppm_rmse / ppm_sigma))
+        anchor_score = float(np.exp(-abs(anchor_ppm_abs) / ppm_sigma))
+        ppm_consistency = float(np.clip((0.70 * residual_score) + (0.30 * anchor_score), 0.0, 1.0))
+
+        if len(matches) >= 2:
+            obs = np.array([float(r.get("obs_mz", 0.0)) for r in matches], dtype=float)
+            pred = np.array([float(r.get("pred_mz", 0.0)) for r in matches], dtype=float)
+            diff_err = np.diff(obs) - np.diff(pred)
+            spacing_rmse_da = float(np.sqrt(np.mean(diff_err * diff_err))) if diff_err.size else 0.0
+            anchor_tol_da = abs(float(anchor_theory_mz)) * float(precursor_tol_ppm) * 1e-6
+            spacing_sigma_cfg = getattr(cfg, "PRECURSOR_SPACING_SIGMA_DA", None)
+            if spacing_sigma_cfg is None:
+                spacing_sigma_da = float(anchor_tol_da)
+            else:
+                spacing_sigma_da = float(spacing_sigma_cfg)
+            if spacing_sigma_da <= 0:
+                spacing_sigma_da = max(anchor_tol_da, 1e-6)
+            spacing_consistency = float(np.exp(-spacing_rmse_da / spacing_sigma_da))
+        else:
+            spacing_rmse_da = float("inf")
+            spacing_consistency = 0.5
+
+        composite_score = (
+            score_w_css * css_val
+            + score_w_cov * coverage
+            + score_w_ppm * ppm_consistency
+            + score_w_spacing * spacing_consistency
+        )
+        return {
+            "coverage": float(coverage),
+            "ppm_rmse": float(ppm_rmse),
+            "ppm_consistency": float(ppm_consistency),
+            "spacing_rmse_da": float(spacing_rmse_da),
+            "spacing_consistency": float(spacing_consistency),
+            "composite_score": float(composite_score),
+        }
+
     work_spectrum = np.array(spectrum, dtype=float, copy=True)
     match_found = False
     best_z = None
@@ -231,6 +397,8 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         windowed = work_spectrum[start_idx:end_idx]
         raw_obs_mz = float(windowed[np.argmax(windowed[:, 1]), 0])
 
+        _use_monoisotopic = str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic"
+
         def _score_precursor_window(*, use_centroid_logic: bool):
             # Get local peaks/centroids under a forced strategy.
             local = get_local_centroids_window(
@@ -246,24 +414,35 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             if local.ndim != 2 or local.shape[1] != 2:
                 return None
 
-            # Anchor observation: highest peak under this strategy.
-            idx = int(np.argmax(local[:, 1]))
-            obs_mz = float(local[idx, 0])
-            obs_anchor_int = float(local[idx, 1])
+            # Default local anchor (most-intense) for fallback and most_intense mode.
+            idx_default = int(np.argmax(local[:, 1]))
+            obs_mz_default = float(local[idx_default, 0])
+            obs_anchor_int_default = float(local[idx_default, 1])
 
             candidate_states = []
             for z, theory in precursor_theories.items():
-                mz_pad = precursor_tol_ppm * 1e-6 * float(obs_mz) if obs_mz > 0 else 0.0
+                # In monoisotopic mode use the theory monoisotopic m/z (index 0) for window check
+                if _use_monoisotopic:
+                    ref_mz_check = float(theory["dist"][0, 0])
+                else:
+                    ref_mz_check = obs_mz_default
+                mz_pad = precursor_tol_ppm * 1e-6 * float(ref_mz_check) if ref_mz_check > 0 else 0.0
                 base_min = float(theory["mz_min"])
                 base_max = float(theory["mz_max"])
                 for state, h_shift in state_shifts:
                     shift_mz = (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
-                    mz_min = base_min + shift_mz - mz_pad
-                    mz_max = base_max + shift_mz + mz_pad
-                    if mz_min <= obs_mz <= mz_max:
-                        candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
+                    mz_min_w = base_min + shift_mz - mz_pad
+                    mz_max_w = base_max + shift_mz + mz_pad
+                    if _use_monoisotopic:
+                        # Check whether the theoretical monoisotopic peak falls in our window
+                        mono_theory_mz = float(theory["dist"][0, 0]) + float(shift_mz)
+                        if window_min - mz_pad <= mono_theory_mz <= window_max + mz_pad:
+                            candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
+                    else:
+                        if mz_min_w <= obs_mz_default <= mz_max_w:
+                            candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
 
-            best_candidate = None
+            scored_candidates: list[dict] = []
             for z, state, h_shift, shift_mz in candidate_states:
                 dist = precursor_theories[z]["dist"]
                 if h_shift:
@@ -272,48 +451,107 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                 else:
                     dist_shifted = dist
                 theory_mz = float(precursor_theories[z]["anchor_mz"]) + float(shift_mz)
-                obs_mz_eval = float(obs_mz)
-                if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
-                    accepted, isodec_css, shifted_peak = isodec_css_and_accept(
-                        local, dist_shifted, z=z, peakmz=obs_mz, config=isodec_config
+                anchor_target_mz = float(dist_shifted[0, 0]) if _use_monoisotopic else float(theory_mz)
+                anchor_indices = _build_anchor_indices(local, anchor_target_mz, anchor_top_k, precursor_tol_ppm)
+                if not anchor_indices:
+                    anchor_indices = [idx_default]
+                local_best_for_state: dict | None = None
+                for anchor_idx in anchor_indices:
+                    anchor_idx = int(anchor_idx)
+                    obs_mz_seed = float(local[anchor_idx, 0])
+                    obs_anchor_int = float(local[anchor_idx, 1])
+                    obs_mz_eval = float(obs_mz_seed)
+                    if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
+                        accepted_model, isodec_css, shifted_peak = isodec_css_and_accept(
+                            local, dist_shifted, z=z, peakmz=obs_mz_seed, config=isodec_config
+                        )
+                        if shifted_peak is not None:
+                            obs_mz_eval = float(shifted_peak)
+                    else:
+                        y_obs_seed = observed_intensities_isodec(
+                            local[:, 0],
+                            local[:, 1],
+                            dist_shifted[:, 0],
+                            z=int(z),
+                            match_tol_ppm=precursor_tol_ppm,
+                            peak_mz=obs_mz_seed,
+                        )
+                        isodec_css = css_similarity(y_obs_seed, dist_shifted[:, 1])
+                        accepted_model = isodec_css >= float(cfg.MIN_COSINE)
+
+                    obs_idx_eval = int(nearest_peak_index(local[:, 0], obs_mz_eval))
+                    if obs_idx_eval >= 0:
+                        obs_anchor_int = float(local[obs_idx_eval, 1])
+
+                    shift_da = float(obs_mz_eval - theory_mz)
+                    matches = _match_theory_local(local, dist_shifted, shift_da, precursor_tol_ppm)
+                    anchor_ppm_abs = abs(((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6) if theory_mz else 0.0
+                    comp = _composite_components(
+                        css=float(isodec_css),
+                        matches=matches,
+                        dist_shifted=dist_shifted,
+                        anchor_ppm_abs=float(anchor_ppm_abs),
+                        anchor_theory_mz=float(theory_mz),
                     )
-                    if shifted_peak is not None:
-                        obs_mz_eval = float(shifted_peak)
-                else:
-                    y_obs = observed_intensities_isodec(
-                        local[:, 0],
-                        local[:, 1],
-                        dist_shifted[:, 0],
-                        z=int(z),
-                        match_tol_ppm=precursor_tol_ppm,
-                        peak_mz=obs_mz,
+                    ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
+                    accepted = bool(
+                        bool(accepted_model)
+                        and float(isodec_css) >= float(cfg.MIN_COSINE)
+                        and float(comp["coverage"]) >= float(min_coverage)
+                        and float(anchor_ppm_abs) <= float(max_anchor_abs_ppm)
+                        and len(matches) > 0
                     )
-                    isodec_css = css_similarity(y_obs, dist_shifted[:, 1])
-                    accepted = isodec_css >= float(cfg.MIN_COSINE)
+                    if len(matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
+                        accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
+                    dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
+                    candidate = {
+                        "charge": int(z),
+                        "state": str(state),
+                        "obs_mz": float(obs_mz_eval),
+                        "anchor_theory_mz": theory_mz,
+                        "ppm": float(ppm),
+                        "css": float(isodec_css),
+                        "accepted": bool(accepted),
+                        "iteration": int(iteration),
+                        "dist": dist_plot,
+                        "obs_anchor_int": float(obs_anchor_int),
+                        "score": float(comp["composite_score"]),
+                        "composite_score": float(comp["composite_score"]),
+                        "coverage": float(comp["coverage"]),
+                        "ppm_rmse": float(comp["ppm_rmse"]),
+                        "ppm_consistency": float(comp["ppm_consistency"]),
+                        "spacing_consistency": float(comp["spacing_consistency"]),
+                        "spacing_rmse_da": float(comp["spacing_rmse_da"]),
+                        "match_count": int(len(matches)),
+                        "anchor_seed_mz": float(obs_mz_seed),
+                        "anchor_target_mz": float(anchor_target_mz),
+                    }
+                    if local_best_for_state is None or float(candidate["composite_score"]) > float(
+                        local_best_for_state.get("composite_score", -1.0)
+                    ):
+                        local_best_for_state = candidate
+                    scored_candidates.append(candidate)
 
-                ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
-                dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
-                candidate = {
-                    "charge": int(z),
-                    "state": str(state),
-                    "obs_mz": float(obs_mz_eval),
-                    "anchor_theory_mz": theory_mz,
-                    "ppm": float(ppm),
-                    "css": float(isodec_css),
-                    "accepted": bool(accepted),
-                    "iteration": int(iteration),
-                    "dist": dist_plot,
-                    "obs_anchor_int": float(obs_anchor_int),
-                }
-                prev = best_by_charge.get(int(z))
-                if prev is None or float(candidate["css"]) > float(prev.get("css", -1.0)):
-                    best_by_charge[int(z)] = candidate
+                if local_best_for_state is not None:
+                    prev = best_by_charge.get(int(z))
+                    prev_score = float(prev.get("composite_score", prev.get("css", -1.0))) if prev is not None else -1.0
+                    if prev is None or float(local_best_for_state["composite_score"]) > prev_score:
+                        best_by_charge[int(z)] = local_best_for_state
 
-                if accepted and isodec_css >= float(cfg.MIN_COSINE):
-                    if best_candidate is None or float(candidate["css"]) > float(best_candidate.get("css", -1.0)):
-                        best_candidate = candidate
-
-            return best_candidate
+            accepted_ranked = sorted(
+                [c for c in scored_candidates if bool(c.get("accepted", False))],
+                key=lambda d: float(d.get("composite_score", d.get("css", -1.0))),
+                reverse=True,
+            )
+            if not accepted_ranked:
+                return None
+            if ambiguity_guard and len(accepted_ranked) >= 2:
+                gap = float(accepted_ranked[0].get("composite_score", 0.0)) - float(
+                    accepted_ranked[1].get("composite_score", 0.0)
+                )
+                if gap < float(ambiguity_margin):
+                    return None
+            return accepted_ranked[0]
 
         best_candidate = execute_hybrid_strategy(_score_precursor_window)
         if best_candidate is not None and first_anchor_int is None:
@@ -336,7 +574,8 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             strat_label = f" [{strat}]" if strat else ""
             print(
                 f"Precursor found in iteration {iteration}: z={best_z}+{state_label}{strat_label} "
-                f"m/z={best_obs_mz:.4f} css={best_css:.3f}"
+                f"m/z={best_obs_mz:.4f} css={best_css:.3f} "
+                f"score={float(best_candidate.get('composite_score', best_css)):.3f}"
             )
             break
 
@@ -358,7 +597,11 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             all_theory_dist = _scale_dist_to_obs(all_theory_dist, float(first_anchor_int))
         best_theory_dist = all_theory_dist
 
-    candidates = sorted(best_by_charge.values(), key=lambda d: float(d.get("css", -1.0)), reverse=True)
+    candidates = sorted(
+        best_by_charge.values(),
+        key=lambda d: float(d.get("composite_score", d.get("css", -1.0))),
+        reverse=True,
+    )
     plot_window = None
     if match_found and best_theory_dist is not None and isinstance(best_theory_dist, np.ndarray) and best_theory_dist.size:
         plot_window = (float(best_theory_dist[0, 0]) - 5.0, float(best_theory_dist[-1, 0]) + 5.0)
