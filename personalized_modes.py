@@ -143,6 +143,9 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             "match_found": False,
             "best_z": None,
             "best_css": 0.0,
+            "best_composite_score": 0.0,
+            "best_coverage": 0.0,
+            "best_ppm_rmse": None,
             "shift_ppm": 0.0,
             "best_obs_mz": None,
             "best_theory_mz": None,
@@ -193,18 +196,28 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
     score_w_cov = float(getattr(cfg, "PRECURSOR_SCORE_W_COVERAGE", 0.25))
     score_w_ppm = float(getattr(cfg, "PRECURSOR_SCORE_W_PPM", 0.20))
     score_w_spacing = float(getattr(cfg, "PRECURSOR_SCORE_W_SPACING", 0.10))
-    score_w_sum = score_w_css + score_w_cov + score_w_ppm + score_w_spacing
+    score_w_intensity = float(getattr(cfg, "PRECURSOR_SCORE_W_INTENSITY", 0.25))
+    score_w_sum = score_w_css + score_w_cov + score_w_ppm + score_w_spacing + score_w_intensity
     if score_w_sum <= 0:
-        score_w_css, score_w_cov, score_w_ppm, score_w_spacing = 0.45, 0.25, 0.20, 0.10
+        score_w_css, score_w_cov, score_w_ppm, score_w_spacing, score_w_intensity = 0.45, 0.25, 0.20, 0.10, 0.25
     else:
         score_w_css /= score_w_sum
         score_w_cov /= score_w_sum
         score_w_ppm /= score_w_sum
         score_w_spacing /= score_w_sum
+        score_w_intensity /= score_w_sum
 
-    anchor_top_k = int(getattr(cfg, "PRECURSOR_ANCHOR_TOP_K", 5))
+    anchor_top_k = int(getattr(cfg, "PRECURSOR_ANCHOR_TOP_K", 3))
     if anchor_top_k <= 0:
         anchor_top_k = 1
+    anchor_top_fraction = float(getattr(cfg, "PRECURSOR_ANCHOR_TOP_FRACTION", 0.30))
+    if not np.isfinite(anchor_top_fraction) or anchor_top_fraction <= 0:
+        anchor_top_fraction = 0.30
+    anchor_top_fraction = float(np.clip(anchor_top_fraction, 0.01, 1.0))
+    anchor_min_rel_int = float(getattr(cfg, "PRECURSOR_ANCHOR_MIN_REL_INT", 0.40))
+    if not np.isfinite(anchor_min_rel_int):
+        anchor_min_rel_int = 0.40
+    anchor_min_rel_int = float(np.clip(anchor_min_rel_int, 0.0, 1.0))
     min_coverage = float(getattr(cfg, "PRECURSOR_MIN_COVERAGE", 0.30))
     max_anchor_abs_ppm = float(getattr(cfg, "PRECURSOR_MAX_ANCHOR_ABS_PPM", precursor_tol_ppm * 1.5))
     max_residual_rmse_ppm = float(getattr(cfg, "PRECURSOR_MAX_RESIDUAL_RMSE_PPM", precursor_tol_ppm))
@@ -219,7 +232,14 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             return []
         local_mz = np.asarray(local[:, 0], dtype=float)
         local_int = np.asarray(local[:, 1], dtype=float)
+        n_local = int(local.shape[0])
         indices: list[int] = []
+        top_int_idx = np.argsort(local_int)[::-1]
+        top_rank_n = int(np.ceil(n_local * anchor_top_fraction))
+        top_rank_n = max(int(top_k), max(1, top_rank_n))
+        top_rank_n = min(top_rank_n, n_local)
+        allowed_mask = np.zeros(n_local, dtype=bool)
+        allowed_mask[top_int_idx[:top_rank_n]] = True
 
         nearest_idx = int(np.argmin(np.abs(local_mz - float(target_mz))))
         tol_da = abs(float(target_mz)) * float(tol_ppm) * 1e-6 if float(target_mz) > 0 else 0.0
@@ -228,11 +248,11 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             if in_tol.size:
                 idx_sorted = in_tol[np.argsort(np.abs(local_mz[in_tol] - float(target_mz)))]
                 for idx in idx_sorted[:top_k]:
-                    indices.append(int(idx))
-        if nearest_idx not in indices:
+                    i = int(idx)
+                    if allowed_mask[i]:
+                        indices.append(i)
+        if nearest_idx not in indices and allowed_mask[nearest_idx]:
             indices.append(nearest_idx)
-
-        top_int_idx = np.argsort(local_int)[::-1]
         for idx in top_int_idx[:top_k]:
             i = int(idx)
             if i not in indices:
@@ -301,6 +321,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         dist_shifted: np.ndarray,
         anchor_ppm_abs: float,
         anchor_theory_mz: float,
+        intensity_ratio: float,
     ) -> dict:
         css_val = float(np.clip(css, 0.0, 1.0))
         theory_int = np.asarray(dist_shifted[:, 1], dtype=float)
@@ -340,11 +361,13 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             spacing_rmse_da = float("inf")
             spacing_consistency = 0.5
 
+        intensity_prior = float(np.sqrt(np.clip(float(intensity_ratio), 0.0, 1.0)))
         composite_score = (
             score_w_css * css_val
             + score_w_cov * coverage
             + score_w_ppm * ppm_consistency
             + score_w_spacing * spacing_consistency
+            + score_w_intensity * intensity_prior
         )
         return {
             "coverage": float(coverage),
@@ -352,6 +375,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             "ppm_consistency": float(ppm_consistency),
             "spacing_rmse_da": float(spacing_rmse_da),
             "spacing_consistency": float(spacing_consistency),
+            "intensity_prior": float(intensity_prior),
             "composite_score": float(composite_score),
         }
 
@@ -360,6 +384,9 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
     best_z = None
     best_state = None
     best_css = 0.0
+    best_composite_score = 0.0
+    best_coverage = 0.0
+    best_ppm_rmse = None
     shift_ppm = 0.0
     best_obs_mz = None
     best_theory_mz = None
@@ -418,6 +445,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             idx_default = int(np.argmax(local[:, 1]))
             obs_mz_default = float(local[idx_default, 0])
             obs_anchor_int_default = float(local[idx_default, 1])
+            local_max_int = float(np.max(local[:, 1])) if local.shape[0] > 0 else 0.0
 
             candidate_states = []
             for z, theory in precursor_theories.items():
@@ -482,6 +510,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                     obs_idx_eval = int(nearest_peak_index(local[:, 0], obs_mz_eval))
                     if obs_idx_eval >= 0:
                         obs_anchor_int = float(local[obs_idx_eval, 1])
+                    anchor_rel_int = (float(obs_anchor_int) / local_max_int) if local_max_int > 0 else 0.0
 
                     shift_da = float(obs_mz_eval - theory_mz)
                     matches = _match_theory_local(local, dist_shifted, shift_da, precursor_tol_ppm)
@@ -492,11 +521,13 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                         dist_shifted=dist_shifted,
                         anchor_ppm_abs=float(anchor_ppm_abs),
                         anchor_theory_mz=float(theory_mz),
+                        intensity_ratio=float(anchor_rel_int),
                     )
                     ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
                     accepted = bool(
                         bool(accepted_model)
                         and float(isodec_css) >= float(cfg.MIN_COSINE)
+                        and float(anchor_rel_int) >= float(anchor_min_rel_int)
                         and float(comp["coverage"]) >= float(min_coverage)
                         and float(anchor_ppm_abs) <= float(max_anchor_abs_ppm)
                         and len(matches) > 0
@@ -522,6 +553,8 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
                         "ppm_consistency": float(comp["ppm_consistency"]),
                         "spacing_consistency": float(comp["spacing_consistency"]),
                         "spacing_rmse_da": float(comp["spacing_rmse_da"]),
+                        "intensity_prior": float(comp["intensity_prior"]),
+                        "anchor_rel_int": float(anchor_rel_int),
                         "match_count": int(len(matches)),
                         "anchor_seed_mz": float(obs_mz_seed),
                         "anchor_target_mz": float(anchor_target_mz),
@@ -565,6 +598,13 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
             best_z = int(best_candidate["charge"])
             best_state = best_candidate.get("state")
             best_css = float(best_candidate["css"])
+            best_composite_score = float(best_candidate.get("composite_score", best_css))
+            best_coverage = float(best_candidate.get("coverage", 0.0) or 0.0)
+            best_ppm_rmse = (
+                float(best_candidate.get("ppm_rmse"))
+                if best_candidate.get("ppm_rmse") is not None
+                else None
+            )
             best_obs_mz = float(best_candidate["obs_mz"])
             best_theory_mz = float(best_candidate["anchor_theory_mz"])
             best_theory_dist = best_candidate["dist"]
@@ -614,6 +654,9 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         "best_z": best_z,
         "best_state": best_state,
         "best_css": float(best_css),
+        "best_composite_score": float(best_composite_score),
+        "best_coverage": float(best_coverage),
+        "best_ppm_rmse": best_ppm_rmse,
         "shift_ppm": float(shift_ppm),
         "best_obs_mz": best_obs_mz,
         "best_theory_mz": best_theory_mz,
