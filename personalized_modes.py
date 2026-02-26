@@ -1856,8 +1856,7 @@ def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = Non
 
     formatted_results.sort(key=rank_key, reverse=True)
 
-    best = results[0] if results else None
-    best_dist = best.get("dist_plot") if isinstance(best, dict) else None
+    best_formatted = formatted_results[0] if formatted_results else None
 
     return {
         "ion_spec": spec,
@@ -1871,11 +1870,11 @@ def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = Non
         "h_transfer": h_transfer,
         "charges_scanned": charges,
         "results": formatted_results,
-        "best": formatted_results[0] if formatted_results else None,
+        "best": best_formatted,
         "spectrum_mz": raw_spectrum[:, 0].tolist() if raw_spectrum.size else [],
         "spectrum_int": raw_spectrum[:, 1].tolist() if raw_spectrum.size else [],
-        "theory_mz": best_dist[:, 0].tolist() if isinstance(best_dist, np.ndarray) and best_dist.size else [],
-        "theory_int": best_dist[:, 1].tolist() if isinstance(best_dist, np.ndarray) and best_dist.size else [],
+        "theory_mz": best_formatted.get("theory_mz", []) if isinstance(best_formatted, dict) else [],
+        "theory_int": best_formatted.get("theory_int", []) if isinstance(best_formatted, dict) else [],
     }
 
 

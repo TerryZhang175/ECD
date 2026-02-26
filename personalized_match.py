@@ -71,6 +71,28 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
             w.writerow({k: r.get(k, "") for k in fieldnames})
 
 
+def composition_to_formula(comp) -> str:
+    """Format a pyteomics Composition as an ordered chemical formula string."""
+    if comp is None:
+        return ""
+    order = ["C", "H", "N", "O", "S", "P", "Cl", "Br", "Na", "K", "Fe", "Ca", "Mg", "Zn", "Ni"]
+    try:
+        items = {str(k): int(v) for k, v in comp.items() if int(v) != 0}
+    except Exception:
+        return str(comp)
+
+    parts: list[str] = []
+    used: set[str] = set()
+    for el in order:
+        n = items.get(el, 0)
+        if n:
+            parts.append(f"{el}{n}")
+            used.add(el)
+    for el in sorted(k for k in items.keys() if k not in used):
+        parts.append(f"{el}{items[el]}")
+    return "".join(parts) if parts else ""
+
+
 def max_intensity_in_ppm_window(
     spectrum_mz: np.ndarray, spectrum_int: np.ndarray, target_mz: float, tol_ppm: float
 ) -> float:
@@ -533,6 +555,32 @@ def diagnose_candidate(
         "diagnostic_steps": [],
     }
 
+    def _scaled_dist_for_display(base_mz: np.ndarray, base_int: np.ndarray, target_mz: float) -> np.ndarray:
+        """Scale theory intensities to local observed anchor intensity for display, even on failures."""
+        dist_disp = np.column_stack([np.asarray(base_mz, dtype=float), np.asarray(base_int, dtype=float)])
+        if dist_disp.size == 0:
+            return dist_disp
+        max_theory = float(np.max(dist_disp[:, 1])) if dist_disp.size else 0.0
+        if max_theory <= 0:
+            return dist_disp
+        anchor_int = 0.0
+        try:
+            anchor_int = max_intensity_in_ppm_window(
+                spectrum_mz,
+                spectrum_int,
+                float(target_mz),
+                float(match_tol_ppm),
+            )
+        except Exception:
+            anchor_int = 0.0
+        if anchor_int <= 0 and len(spectrum_mz):
+            idx_n = nearest_peak_index(spectrum_mz, float(target_mz))
+            anchor_int = float(spectrum_int[idx_n])
+        if anchor_int <= 0:
+            anchor_int = float(np.max(spectrum_int)) if len(spectrum_int) else 1.0
+        dist_disp[:, 1] *= float(anchor_int) / float(max_theory)
+        return dist_disp
+
     frag_name, base_frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
     cys_variants = get_disulfide_logic(ion_type, frag_len, len(residues))
     if not cys_variants:
@@ -589,8 +637,7 @@ def diagnose_candidate(
             )
             continue
 
-        formula = getattr(loss_comp, "formula", None)
-        variant_result["formula"] = str(formula) if formula else str(loss_comp)
+        variant_result["formula"] = composition_to_formula(loss_comp)
 
         try:
             dist0 = theoretical_isodist_from_comp(loss_comp, z)
@@ -673,6 +720,15 @@ def diagnose_candidate(
         if len(sample_mzs) == 0:
             variant_result["reason"] = "sample_axis_empty"
             variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
+            fallback_dist = _scaled_dist_for_display(dist0[:, 0], dist0[:, 1], dist0_theory_mz)
+            variant_result["dist_plot"] = fallback_dist
+            variant_result["theory_matches"] = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                fallback_dist[:, 0],
+                theory_int=fallback_dist[:, 1],
+                tol_ppm=float(match_tol_ppm),
+            )
             variant_result["diagnostic_steps"].append(
                 {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"}
             )
@@ -866,11 +922,15 @@ def diagnose_candidate(
             variant_result["reason"] = "anchor_outside_ppm"
             variant_result["anchor_theory_mz"] = expected_theory_mz  # Still provide theory m/z
             # Build dist_plot for visualization even without anchor match
-            dist_plot = np.column_stack([sample_mzs.copy(), best_pred.copy()])
-            max_plot = float(np.max(dist_plot[:, 1]))
-            if max_plot > 0 and obs_max > 0:
-                dist_plot[:, 1] *= obs_max / max_plot
+            dist_plot = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), expected_theory_mz)
             variant_result["dist_plot"] = dist_plot
+            variant_result["theory_matches"] = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                dist_plot[:, 0],
+                theory_int=dist_plot[:, 1],
+                tol_ppm=float(match_tol_ppm),
+            )
             variant_result["diagnostic_steps"].append(
                 {
                     "step": "5. Anchor selection",
@@ -921,6 +981,15 @@ def diagnose_candidate(
             dist_plot = dist_plot[(dist_plot[:, 0] >= mz_min_f) & (dist_plot[:, 0] <= mz_max_f)]
         if dist_plot.size == 0:
             variant_result["reason"] = "outside_mz_window"
+            fallback_dist = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), anchor_theory_mz)
+            variant_result["dist_plot"] = fallback_dist
+            variant_result["theory_matches"] = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                fallback_dist[:, 0],
+                theory_int=fallback_dist[:, 1],
+                tol_ppm=float(match_tol_ppm),
+            )
             variant_result["diagnostic_steps"].append(
                 {
                     "step": "6. PPM offset calculation",
@@ -936,6 +1005,15 @@ def diagnose_candidate(
         dist_plot = dist_plot[keep]
         if dist_plot.size == 0:
             variant_result["reason"] = "below_rel_intensity_cutoff"
+            fallback_dist = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), anchor_theory_mz)
+            variant_result["dist_plot"] = fallback_dist
+            variant_result["theory_matches"] = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                fallback_dist[:, 0],
+                theory_int=fallback_dist[:, 1],
+                tol_ppm=float(match_tol_ppm),
+            )
             variant_result["diagnostic_steps"].append(
                 {
                     "step": "6. PPM offset calculation",
@@ -1007,6 +1085,14 @@ def diagnose_candidate(
 
             if not accepted:
                 variant_result["reason"] = "failed_isodec_rules"
+                variant_result["dist_plot"] = dist_plot
+                variant_result["theory_matches"] = match_theory_peaks(
+                    spectrum_mz,
+                    spectrum_int,
+                    dist_plot[:, 0],
+                    theory_int=dist_plot[:, 1],
+                    tol_ppm=float(match_tol_ppm),
+                )
                 variant_results.append(variant_result)
                 continue
 
