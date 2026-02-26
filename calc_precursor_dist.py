@@ -30,6 +30,9 @@ REL_INTENSITY_CUTOFF = 0.01 # drop peaks < 1% of max
 
 ENABLE_H_TRANSFER = True
 H_TRANSFER_MASS = 1.007276467
+
+# Anchor alignment: "most_intense" (default) or "monoisotopic"
+ANCHOR_MODE = "most_intense"
 # ────────────────────────────────────────────────────────────────────────────
 
 
@@ -178,7 +181,7 @@ def main():
             else:
                 dist = base_dist
 
-            anchor_idx = int(np.argmax(dist[:, 1]))
+            anchor_idx = 0 if ANCHOR_MODE.lower() == "monoisotopic" else int(np.argmax(dist[:, 1]))
             anchor_mz = float(dist[anchor_idx, 0])
             mz_range = (float(dist[0, 0]), float(dist[-1, 0]))
 

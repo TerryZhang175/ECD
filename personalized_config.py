@@ -27,7 +27,7 @@ except Exception:
         isodec_make_shifted_peak = None
 
 
-filepath = '/Users/terry/Downloads/Slice A ECD trans 15 lockmass smoothed mz (1).txt'
+filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/ZD_21to22Feb_2n5_WTECD/RE 30.txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/Slice A ECD trans 15 lockmass smoothed mz (1)
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "diagnose"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "precursor"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = True  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -52,10 +52,10 @@ MZ_MAX = None
 # - Phospho: "S[HPO3]" (equivalent to PO3H)
 # - Carbamidomethyl (IAA): "C[C2H3NO]"
 # Bracket contents are interpreted as an elemental formula (not a mass delta).
-PEPTIDE = "IRAITKVAKLSWQVLTGKIGPLLQGR"
-COPIES = 1  # 1=monomer, 2=dimer (two copies of the same peptide)
+PEPTIDE = "KCNTATCATQRLANFLVHSSNNFGAILSSTNVGSNTY"
+COPIES = 2  # 1=monomer, 2=dimer (two copies of the same peptide)
 AMIDATED = True  # C-terminal amidation (adds HN, removes O; delta = H1N1O-1) per copy
-DISULFIDE_BONDS = 0  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
+DISULFIDE_BONDS = 2  # total disulfide bonds in the complex (each removes H2, ~-2.01565 Da per bond)
 # Define disulfide bond pairs (1-based indices)
 # Example: For KCNT... sequence, Cys at positions 2 and 7
 DISULFIDE_MAP = [(2, 7)]
@@ -164,12 +164,17 @@ AMIDATION_FORMULA = "H1N1O-1"
 
 REL_INTENSITY_CUTOFF = 0.01
 
+# Anchor mode: which peak in the theoretical isotope envelope to align against the observed spectrum.
+#   "most_intense" — align to the peak with the highest theoretical intensity (default, original behaviour)
+#   "monoisotopic" — align to the monoisotopic (first / lowest m/z) peak
+ANCHOR_MODE = "most_intense"
+
 # Precursor mode settings.
 PRECURSOR_MIN_CHARGE = 1
 PRECURSOR_MAX_CHARGE = 10
 PRECURSOR_WINDOW_DA = 5.1
 PRECURSOR_SEARCH_ITERATIONS = 5
-PRECURSOR_MATCH_TOL_PPM = 80  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
+PRECURSOR_MATCH_TOL_PPM = 40  # separate ppm tolerance for precursor mode (independent of MATCH_TOL_PPM)
 ENABLE_LOCK_MASS = True
 # Enable precursor lock-mass calibration before fragments/complex_fragments/charge_reduced modes.
 # When True, the spectrum is first searched for the precursor ion, and if found, all m/z values

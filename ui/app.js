@@ -28,6 +28,7 @@ const hTransferInput = document.getElementById('hTransfer');
 const neutralLossInput = document.getElementById('neutralLoss');
 const precursorCalibrationInput = document.getElementById('precursorCalibration');
 const enableCentroidInput = document.getElementById('enableCentroid');
+const anchorModeSelect = document.getElementById('anchorMode');
 const coverageLoadButton = document.getElementById('coverageLoadButton');
 const coverageFile = document.getElementById('coverageFile');
 const coverageStatus = document.getElementById('coverageStatus');
@@ -477,6 +478,7 @@ const startRun = async () => {
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
         disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
         enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
+        anchor_mode: anchorModeSelect ? anchorModeSelect.value : null,
       };
     } else {
       payload = {
@@ -502,6 +504,7 @@ const startRun = async () => {
         amidated: amidatedInput ? amidatedInput.checked : null,
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
         disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
+        anchor_mode: anchorModeSelect ? anchorModeSelect.value : null,
       };
     }
 
@@ -693,7 +696,7 @@ setInterval(updateSession, 1000);
 setWarnings(['Load a data file to begin.']);
 
 const plotLayout = {
-  margin: { l: 48, r: 24, t: 24, b: 44 },
+  margin: { l: 36, r: 10, t: 10, b: 30 },
   paper_bgcolor: 'rgba(0,0,0,0)',
   plot_bgcolor: 'rgba(0,0,0,0)',
   font: { family: 'Fira Sans, sans-serif', color: '#1e3a8a' },

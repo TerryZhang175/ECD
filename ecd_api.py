@@ -193,6 +193,7 @@ class FragmentsRunRequest(BaseModel):
     enable_neutral_losses: Optional[bool] = None
     precursor_calibration: Optional[bool] = None
     enable_centroid: Optional[bool] = None
+    anchor_mode: Optional[str] = Field(None, description="Anchor alignment: 'most_intense' (default) or 'monoisotopic'")
 
 
 class DiagnoseRunRequest(BaseModel):
@@ -212,6 +213,7 @@ class DiagnoseRunRequest(BaseModel):
     disulfide_bonds: Optional[int] = Field(None, ge=0)
     disulfide_map: Optional[str] = None
     enable_isodec_rules: Optional[bool] = None
+    anchor_mode: Optional[str] = Field(None, description="Anchor alignment: 'most_intense' (default) or 'monoisotopic'")
 
 
 @app.get("/api/health")
@@ -288,6 +290,8 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "
         overrides.append(_CfgOverride("PRECURSOR_CHAIN_TO_FRAGMENTS", bool(req.precursor_calibration)))
     if req.enable_centroid is not None:
         overrides.append(_CfgOverride("ENABLE_CENTROID", bool(req.enable_centroid)))
+    if req.anchor_mode is not None:
+        overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     return overrides
 
 
@@ -328,6 +332,8 @@ def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    if req.anchor_mode is not None:
+        overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     return overrides
 
 
@@ -363,6 +369,8 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    if req.anchor_mode is not None:
+        overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     return overrides
 
 
@@ -637,7 +645,8 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         anchor_mz = None
         ppm = None
         if isinstance(dist_full, np.ndarray) and dist_full.size:
-            anchor_idx = int(np.argmax(dist_full[:, 1]))
+            from personalized_theory import get_anchor_idx
+            anchor_idx = get_anchor_idx(dist_full)
             anchor_mz = float(dist_full[anchor_idx, 0])
             obs_mz = _safe_float(m.get("obs_mz"))
             if obs_mz is not None and anchor_mz:
@@ -910,6 +919,8 @@ def _build_diagnose_overrides(req: DiagnoseRunRequest, filepath: str) -> list[_C
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    if req.anchor_mode is not None:
+        overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     return overrides
 
 

@@ -151,6 +151,7 @@ curl -X POST http://127.0.0.1:8001/api/run/fragments \
 
 - The API overrides `personalized_config.py` values per request using a safe context manager.
 - `PRECURSOR_MATCH_TOL_PPM` (default: 20 ppm) provides a separate matching tolerance for precursor mode, independent of `MATCH_TOL_PPM` used for fragment matching.
+- `ANCHOR_MODE` controls which peak in the theoretical isotope envelope is used for alignment: `"most_intense"` (default, aligns to the highest-intensity theoretical peak) or `"monoisotopic"` (aligns to the first/lowest m/z peak). Available in the UI under "Matching Thresholds".
 - When `PRECURSOR_CHAIN_TO_FRAGMENTS = True`, fragments and complex fragments runs are calibrated first using precursor lock-mass correction (without plotting in the API path).
 - **Hybrid raw vs centroid strategy**: matching can be evaluated in two strategies:
   - **raw**: use the original points in a local window (no additional centroiding)

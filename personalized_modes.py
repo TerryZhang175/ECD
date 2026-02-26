@@ -35,6 +35,7 @@ from personalized_theory import (
     build_sample_axis,
     css_similarity,
     fit_simplex_mixture,
+    get_anchor_idx,
     observed_intensities_isodec,
     theoretical_isodist_from_comp,
     vectorize_dist,
@@ -122,7 +123,7 @@ def run_precursor_headless(residues, spectrum, isodec_config) -> dict:
         if dist.ndim != 2 or dist.shape[1] != 2:
             continue
         dist = dist[np.argsort(dist[:, 0])]
-        anchor_idx = int(np.argmax(dist[:, 1]))
+        anchor_idx = get_anchor_idx(dist)
         anchor_mz = float(dist[anchor_idx, 0])
         mz_min = float(dist[0, 0])
         mz_max = float(dist[-1, 0])
@@ -446,7 +447,7 @@ def run_charge_reduced_headless(residues, spectrum, isodec_config) -> dict:
             if dist0.size == 0:
                 continue
 
-            theory_base_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+            theory_base_mz = float(dist0[get_anchor_idx(dist0), 0])
             window_mask = (spectrum_mz >= theory_base_mz - 2.0) & (spectrum_mz <= theory_base_mz + 2.0)
             if not np.any(window_mask):
                 continue
@@ -586,7 +587,7 @@ def run_charge_reduced_mode(residues, spectrum, isodec_config) -> None:
             if dist0.size == 0:
                 continue
 
-            theory_base_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+            theory_base_mz = float(dist0[get_anchor_idx(dist0), 0])
             window_mask = (spectrum_mz >= theory_base_mz - 2.0) & (spectrum_mz <= theory_base_mz + 2.0)
             if not np.any(window_mask):
                 continue
@@ -928,7 +929,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 if len(sample_mzs) == 0:
                     return None
 
-                peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+                peak_mz = float(dist0[get_anchor_idx(dist0), 0])
                 y_obs = observed_intensities_isodec(
                     spectrum_mz,
                     spectrum_int,

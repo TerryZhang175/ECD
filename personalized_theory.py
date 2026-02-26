@@ -52,6 +52,17 @@ def theoretical_isodist_from_comp(
     return dist
 
 
+def get_anchor_idx(dist: np.ndarray) -> int:
+    """Return the anchor peak index in *dist* (Nx2 array sorted by m/z).
+
+    ``cfg.ANCHOR_MODE == "monoisotopic"`` → index 0 (lowest m/z).
+    Otherwise (``"most_intense"``, default) → index of the highest-intensity peak.
+    """
+    if str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic":
+        return 0
+    return int(np.argmax(dist[:, 1]))
+
+
 def css_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if cfg.isodec_calculate_cosinesimilarity is None:
         raise ImportError("IsoDec cosine similarity is not available; install UniDec IsoDec deps.")

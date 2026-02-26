@@ -22,6 +22,7 @@ from personalized_theory import (
     build_sample_axis,
     css_similarity,
     fit_simplex_mixture,
+    get_anchor_idx,
     observed_intensities_isodec,
     theoretical_isodist_from_comp,
     vectorize_dist,
@@ -144,7 +145,7 @@ def compute_fragment_intensity_cap(
                         if dist0.size == 0:
                             continue
 
-                        anchor = float(dist0[np.argmax(dist0[:, 1]), 0])
+                        anchor = float(dist0[get_anchor_idx(dist0), 0])
                         if allow_1h or allow_2h:
                             shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
                             shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
@@ -179,7 +180,7 @@ def compute_fragment_intensity_cap(
                             if dist0.size == 0:
                                 continue
 
-                            anchor = float(dist0[np.argmax(dist0[:, 1]), 0])
+                            anchor = float(dist0[get_anchor_idx(dist0), 0])
                             if allow_1h or allow_2h:
                                 shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
                                 shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
@@ -611,7 +612,7 @@ def diagnose_candidate(
             continue
 
         # Save theory m/z from dist0 early (before H-transfer processing)
-        dist0_theory_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+        dist0_theory_mz = float(dist0[get_anchor_idx(dist0), 0])
         variant_result["expected_theory_mz"] = dist0_theory_mz
 
         sample_mzs = None
@@ -678,7 +679,7 @@ def diagnose_candidate(
             variant_results.append(variant_result)
             continue
 
-        peak_mz = float(dist0[np.argmax(dist0[:, 1]), 0])
+        peak_mz = float(dist0[get_anchor_idx(dist0), 0])
         y_obs = observed_intensities_isodec(
             spectrum_mz,
             spectrum_int,
@@ -819,7 +820,11 @@ def diagnose_candidate(
         anchor_hits = 0
 
         anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
-        sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
+        if str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic":
+            nonzero_idx = np.where(best_pred > 0)[0]
+            sorted_idx = nonzero_idx[: int(cfg.ANCHOR_TOP_N)]
+        else:
+            sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
         for idx in sorted_idx:
             mz_candidate = float(sample_mzs[int(idx)])
             local_centroids = get_local_centroids_window(
@@ -850,8 +855,11 @@ def diagnose_candidate(
                 obs_mz = obs_mz_c
                 obs_int = obs_int_c
 
-        # Even if no anchor found, save the expected theory m/z (strongest peak)
-        expected_theory_mz = float(sample_mzs[int(np.argmax(best_pred))])
+        if str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic":
+            _nz = np.where(best_pred > 0)[0]
+            expected_theory_mz = float(sample_mzs[int(_nz[0])]) if len(_nz) > 0 else float(sample_mzs[0])
+        else:
+            expected_theory_mz = float(sample_mzs[int(np.argmax(best_pred))])
         variant_result["expected_theory_mz"] = expected_theory_mz
 
         if anchor_hits < int(cfg.ANCHOR_MIN_MATCHES) or anchor_theory_mz is None:
