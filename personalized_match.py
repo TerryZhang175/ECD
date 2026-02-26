@@ -919,16 +919,17 @@ def diagnose_candidate(
             mz_min_f = -np.inf if mz_min is None else float(mz_min)
             mz_max_f = np.inf if mz_max is None else float(mz_max)
             dist_plot = dist_plot[(dist_plot[:, 0] >= mz_min_f) & (dist_plot[:, 0] <= mz_max_f)]
-            if dist_plot.size == 0:
-                variant_result["reason"] = "outside_mz_window"
-                variant_result["diagnostic_steps"].append(
-                    {
-                        "step": "6. PPM offset calculation",
-                        "status": "fail",
-                        "details": f"No peaks in [{mz_min_f:.2f}, {mz_max_f:.2f}] m/z",
-                    }
-                )
-                continue
+        if dist_plot.size == 0:
+            variant_result["reason"] = "outside_mz_window"
+            variant_result["diagnostic_steps"].append(
+                {
+                    "step": "6. PPM offset calculation",
+                    "status": "fail",
+                    "details": f"No peaks in [{mz_min_f:.2f}, {mz_max_f:.2f}] m/z",
+                }
+            )
+            variant_results.append(variant_result)
+            continue
 
         max_plot = float(np.max(dist_plot[:, 1]))
         keep = dist_plot[:, 1] >= max_plot * float(rel_intensity_cutoff)
@@ -942,6 +943,7 @@ def diagnose_candidate(
                     "details": f"No peaks above {rel_intensity_cutoff*100:.1f}% relative intensity",
                 }
             )
+            variant_results.append(variant_result)
             continue
 
         isodec_css = float(best_score)
@@ -1005,6 +1007,7 @@ def diagnose_candidate(
 
             if not accepted:
                 variant_result["reason"] = "failed_isodec_rules"
+                variant_results.append(variant_result)
                 continue
 
             if shifted_peak is not None:
@@ -1068,8 +1071,11 @@ def diagnose_candidate(
         return result
 
     pass_count = sum(1 for r in variant_results if r.get("ok"))
-    best_result = max(variant_results, key=variant_rank_key_from_result)
+    ranked_variants = sorted(variant_results, key=variant_rank_key_from_result, reverse=True)
+    best_result = ranked_variants[0]
     best_result["variant_pass_count"] = int(pass_count)
+    # Preserve all evaluated disulfide variants so diagnose mode can display them in parallel.
+    best_result["all_variants"] = ranked_variants
     return best_result
 
 

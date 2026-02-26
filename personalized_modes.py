@@ -1788,59 +1788,73 @@ def run_diagnose_headless(residues, spectrum, isodec_config, ion_spec: str = Non
         results.append(r)
 
     def rank_key(d: dict):
-        css = d.get("isodec_css", float("nan"))
-        raw = d.get("raw_cosine_preanchor", 0.0)
+        try:
+            css = float(d.get("isodec_css", float("nan")))
+        except Exception:
+            css = float("nan")
+        raw = d.get("raw_cosine_preanchor", d.get("raw_cosine", 0.0))
+        try:
+            raw_val = float(raw)
+        except Exception:
+            raw_val = 0.0
         ok = 1 if d.get("ok") else 0
         css_val = css if np.isfinite(css) else -1.0
-        return (ok, css_val, raw)
+        return (ok, css_val, raw_val)
 
     results.sort(key=rank_key, reverse=True)
 
-    # Format results for API response
+    # Format results for API response. Show all disulfide variants in parallel.
     formatted_results = []
     for r in results:
-        z = r["z"]
-        frag_name = r.get("frag_name", f"{ion_type}{frag_len}")
-        loss = ""
-        if loss_formula and loss_count:
-            loss = neutral_loss_label(int(loss_count), loss_formula)
-        label = f"{frag_name}{loss}^{z}+"
+        variants = r.get("all_variants")
+        rows = variants if isinstance(variants, list) and variants else [r]
+        for row in rows:
+            z = row["z"]
+            frag_name = row.get("frag_name", f"{ion_type}{frag_len}")
+            row_loss_formula = row.get("loss_formula", "")
+            row_loss_count = int(row.get("loss_count", 0) or 0)
+            loss = neutral_loss_label(row_loss_count, row_loss_formula) if row_loss_formula and row_loss_count else ""
+            label = f"{frag_name}{loss}^{z}+"
 
-        dist = r.get("dist_plot")
-        theory_mz = dist[:, 0].tolist() if isinstance(dist, np.ndarray) and dist.size else []
-        theory_int = dist[:, 1].tolist() if isinstance(dist, np.ndarray) and dist.size else []
+            dist = row.get("dist_plot")
+            theory_mz = dist[:, 0].tolist() if isinstance(dist, np.ndarray) and dist.size else []
+            theory_int = dist[:, 1].tolist() if isinstance(dist, np.ndarray) and dist.size else []
 
-        # Use anchor_theory_mz if available, otherwise use expected_theory_mz
-        theory_anchor_mz = r.get("anchor_theory_mz") or r.get("expected_theory_mz")
+            # Use anchor_theory_mz if available, otherwise use expected_theory_mz
+            theory_anchor_mz = row.get("anchor_theory_mz") or row.get("expected_theory_mz")
 
-        formatted_results.append({
-            "label": label,
-            "ion_type": r.get("ion_type", ""),
-            "frag_name": frag_name,
-            "frag_len": r.get("frag_len"),
-            "charge": int(z),
-            "loss_formula": r.get("loss_formula", ""),
-            "loss_count": r.get("loss_count", 0),
-            "h_transfer": r.get("h_transfer", 0),
-            "ok": bool(r.get("ok", False)),
-            "reason": r.get("reason", ""),
-            "formula": r.get("formula", ""),
-            "mono_mass": r.get("mono_mass"),
-            "avg_mass": r.get("avg_mass"),
-            "raw_cosine": r.get("raw_cosine_preanchor"),
-            "isodec_css": r.get("isodec_css"),
-            "isodec_accepted": bool(r.get("isodec_accepted", False)),
-            "anchor_theory_mz": theory_anchor_mz,
-            "anchor_obs_mz": r.get("anchor_obs_mz"),
-            "anchor_ppm": r.get("anchor_ppm"),
-            "anchor_within_ppm": bool(r.get("anchor_within_ppm", False)),
-            "obs_int": r.get("obs_int"),
-            "obs_rel_int": r.get("obs_rel_int"),
-            "theory_mz": theory_mz,
-            "theory_int": theory_int,
-            "diagnostic_steps": r.get("diagnostic_steps", []),
-            "theory_matches": r.get("theory_matches", []),
-        })
+            formatted_results.append({
+                "label": label,
+                "ion_type": row.get("ion_type", ""),
+                "frag_name": frag_name,
+                "frag_len": row.get("frag_len"),
+                "charge": int(z),
+                "loss_formula": row.get("loss_formula", ""),
+                "loss_count": row.get("loss_count", 0),
+                "h_transfer": row.get("h_transfer", 0),
+                "variant_suffix": row.get("variant_suffix", ""),
+                "variant_type": row.get("variant_type", ""),
+                "ok": bool(row.get("ok", False)),
+                "reason": row.get("reason", ""),
+                "formula": row.get("formula", ""),
+                "mono_mass": row.get("mono_mass"),
+                "avg_mass": row.get("avg_mass"),
+                "raw_cosine": row.get("raw_cosine_preanchor"),
+                "isodec_css": row.get("isodec_css"),
+                "isodec_accepted": bool(row.get("isodec_accepted", False)),
+                "anchor_theory_mz": theory_anchor_mz,
+                "anchor_obs_mz": row.get("anchor_obs_mz"),
+                "anchor_ppm": row.get("anchor_ppm"),
+                "anchor_within_ppm": bool(row.get("anchor_within_ppm", False)),
+                "obs_int": row.get("obs_int"),
+                "obs_rel_int": row.get("obs_rel_int"),
+                "theory_mz": theory_mz,
+                "theory_int": theory_int,
+                "diagnostic_steps": row.get("diagnostic_steps", []),
+                "theory_matches": row.get("theory_matches", []),
+            })
+
+    formatted_results.sort(key=rank_key, reverse=True)
 
     best = results[0] if results else None
     best_dist = best.get("dist_plot") if isinstance(best, dict) else None
