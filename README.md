@@ -32,6 +32,7 @@ ECD/
 |  |- index.html             # UI shell
 |  |- app.js                 # UI logic (Plotly rendering)
 |  |- styles.css             # UI styles
+|- calc_precursor_dist.py    # Standalone precursor isotope distribution calculator
 |- match_outputs/            # CSV outputs from CLI runs
 ```
 
