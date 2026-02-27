@@ -29,6 +29,13 @@ const neutralLossInput = document.getElementById('neutralLoss');
 const precursorCalibrationInput = document.getElementById('precursorCalibration');
 const enableCentroidInput = document.getElementById('enableCentroid');
 const anchorModeSelect = document.getElementById('anchorMode');
+const isodecMinPeaksInput = document.getElementById('isodecMinPeaks');
+const isodecMinAreaCoveredInput = document.getElementById('isodecMinAreaCovered');
+const isodecMzWindowLbInput = document.getElementById('isodecMzWindowLb');
+const isodecMzWindowUbInput = document.getElementById('isodecMzWindowUb');
+const isodecPlusoneIntWindowLbInput = document.getElementById('isodecPlusoneIntWindowLb');
+const isodecPlusoneIntWindowUbInput = document.getElementById('isodecPlusoneIntWindowUb');
+const isodecMinusoneAsZeroInput = document.getElementById('isodecMinusoneAsZero');
 const coverageLoadButton = document.getElementById('coverageLoadButton');
 const coverageFile = document.getElementById('coverageFile');
 const coverageStatus = document.getElementById('coverageStatus');
@@ -207,6 +214,13 @@ const loadConfig = async () => {
     if (neutralLossInput && data.enable_neutral_losses !== undefined) neutralLossInput.checked = Boolean(data.enable_neutral_losses);
     if (precursorCalibrationInput && data.precursor_calibration !== undefined) precursorCalibrationInput.checked = Boolean(data.precursor_calibration);
     if (enableCentroidInput && data.enable_centroid !== undefined) enableCentroidInput.checked = Boolean(data.enable_centroid);
+    if (isodecMinPeaksInput && data.isodec_min_peaks !== undefined) isodecMinPeaksInput.value = data.isodec_min_peaks;
+    if (isodecMinAreaCoveredInput && data.isodec_min_area_covered !== undefined) isodecMinAreaCoveredInput.value = data.isodec_min_area_covered;
+    if (isodecMzWindowLbInput && data.isodec_mz_window_lb !== undefined) isodecMzWindowLbInput.value = data.isodec_mz_window_lb;
+    if (isodecMzWindowUbInput && data.isodec_mz_window_ub !== undefined) isodecMzWindowUbInput.value = data.isodec_mz_window_ub;
+    if (isodecPlusoneIntWindowLbInput && data.isodec_plusone_int_window_lb !== undefined) isodecPlusoneIntWindowLbInput.value = data.isodec_plusone_int_window_lb;
+    if (isodecPlusoneIntWindowUbInput && data.isodec_plusone_int_window_ub !== undefined) isodecPlusoneIntWindowUbInput.value = data.isodec_plusone_int_window_ub;
+    if (isodecMinusoneAsZeroInput && data.isodec_minusone_as_zero !== undefined) isodecMinusoneAsZeroInput.checked = Boolean(data.isodec_minusone_as_zero);
     setChipSelection(data.ion_types || []);
     setCoverageStatus('Config loaded');
   } catch (error) {
@@ -217,23 +231,29 @@ const loadConfig = async () => {
 const updateResultsTable = (fragments) => {
   const tbody = resultsTable.querySelector('tbody');
   const withIndex = fragments.map((frag, idx) => ({ ...frag, _idx: idx }));
-  const ranked = withIndex.sort((a, b) => (b.css || 0) - (a.css || 0));
+  const ranked = withIndex.sort((a, b) => {
+    const aScore = Number.isFinite(a.score) ? a.score : (Number.isFinite(a.css) ? a.css : -Infinity);
+    const bScore = Number.isFinite(b.score) ? b.score : (Number.isFinite(b.css) ? b.css : -Infinity);
+    return bScore - aScore;
+  });
   tbody.innerHTML = ranked
     .map((frag) => {
       const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
       const ion = frag.displayLabel || ionFallback;
+      const formula = frag.formula || '';
       const obsMz = frag.obsMz != null ? frag.obsMz.toFixed(4) : '';
       const theoryMz = frag.anchorMz != null ? frag.anchorMz.toFixed(4) : '';
       const ppm = frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '';
       const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
       const intensity = frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '';
-      const score = frag.css != null ? frag.css.toFixed(3) : '';
+      const scoreValue = Number.isFinite(frag.score) ? frag.score : frag.css;
+      const score = scoreValue != null ? scoreValue.toFixed(3) : '';
       const centerAttr = Number.isFinite(centerMz) ? ` data-center-mz="${centerMz}"` : '';
       const matchAttr = Number.isFinite(frag._idx) ? ` data-match-idx="${frag._idx}"` : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
-      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${obsMz}</td>\n        <td>${theoryMz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${formula}</td>\n        <td>${obsMz}</td>\n        <td>${theoryMz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
     })
     .join('');
   activeResultRow = null;
@@ -284,9 +304,12 @@ const applyPrecursorResults = (data) => {
     obsMz: cand.obs_mz,
     obsInt: null,
     css: cand.css,
+    score: cand.composite_score ?? cand.score ?? cand.css,
     anchorMz: cand.anchor_theory_mz,
     anchorPpm: cand.ppm,
     accepted: cand.accepted,
+    coverage: cand.coverage,
+    ppmRmse: cand.ppm_rmse,
     label: `Precursor ${cand.charge}+`,
     theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
     theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
@@ -298,13 +321,15 @@ const applyPrecursorResults = (data) => {
   rerenderCoverage();
 
   const bestCss = toNumberOrNull(summary.best_css);
+  const bestScore = toNumberOrNull(summary.best_score ?? summary.best_css);
   const shiftPpm = toNumberOrNull(summary.shift_ppm);
   if (summary.match_found) {
     const bestCharge = summary.best_charge ? `${summary.best_charge}+` : '?';
+    const scoreText = Number.isFinite(bestScore) ? bestScore.toFixed(3) : '--';
     const cssText = Number.isFinite(bestCss) ? bestCss.toFixed(3) : '--';
     const shiftApplied = Number.isFinite(shiftPpm) ? -shiftPpm : null;
     const shiftText = shiftApplied != null ? `, shift ${shiftApplied.toFixed(2)} ppm` : '';
-    setCoverageStatus(`Precursor ${bestCharge} css=${cssText}${shiftText}`);
+    setCoverageStatus(`Precursor ${bestCharge} score=${scoreText} (css=${cssText})${shiftText}`);
   } else {
     setCoverageStatus('Precursor not found', true);
   }
@@ -401,6 +426,23 @@ const applyDiagnoseResults = (data) => {
   }
 };
 
+const buildDiagnoseOverlays = (results) => {
+  const rows = Array.isArray(results) ? results : [];
+  const palette = ['#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e', '#ef4444', '#0ea5e9'];
+  let colorIndex = 0;
+  return rows
+    .map((r) => {
+      const mz = Array.isArray(r?.theory_mz) ? r.theory_mz : [];
+      const intensity = Array.isArray(r?.theory_int) ? r.theory_int : [];
+      if (!mz.length || !intensity.length) return null;
+      const label = r?.label || 'Theory';
+      const color = palette[colorIndex % palette.length];
+      colorIndex += 1;
+      return { mz, intensity, color, label };
+    })
+    .filter(Boolean);
+};
+
 const applySpectrum = (spectrum, theory, options = {}) => {
   if (!spectrum || !Array.isArray(spectrum.mz) || !spectrum.mz.length) {
     return;
@@ -473,6 +515,13 @@ const startRun = async () => {
         frag_max_charge: fragMaxChargeInput ? Number(fragMaxChargeInput.value) : null,
         match_tol_ppm: matchTolInput ? Number(matchTolInput.value) : null,
         min_cosine: Number(cosineSlider.value),
+        isodec_min_peaks: isodecMinPeaksInput ? Number(isodecMinPeaksInput.value) : null,
+        isodec_min_area_covered: isodecMinAreaCoveredInput ? Number(isodecMinAreaCoveredInput.value) : null,
+        isodec_mz_window_lb: isodecMzWindowLbInput ? Number(isodecMzWindowLbInput.value) : null,
+        isodec_mz_window_ub: isodecMzWindowUbInput ? Number(isodecMzWindowUbInput.value) : null,
+        isodec_plusone_int_window_lb: isodecPlusoneIntWindowLbInput ? Number(isodecPlusoneIntWindowLbInput.value) : null,
+        isodec_plusone_int_window_ub: isodecPlusoneIntWindowUbInput ? Number(isodecPlusoneIntWindowUbInput.value) : null,
+        isodec_minusone_as_zero: isodecMinusoneAsZeroInput ? isodecMinusoneAsZeroInput.checked : null,
         copies: copiesInput ? Number(copiesInput.value) : null,
         amidated: amidatedInput ? amidatedInput.checked : null,
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
@@ -495,6 +544,13 @@ const startRun = async () => {
         precursor_match_tol_ppm: precursorMatchTolInput ? Number(precursorMatchTolInput.value) : null,
         min_cosine: Number(cosineSlider.value),
         isodec_css_thresh: Number(cosineSlider.value),
+        isodec_min_peaks: isodecMinPeaksInput ? Number(isodecMinPeaksInput.value) : null,
+        isodec_min_area_covered: isodecMinAreaCoveredInput ? Number(isodecMinAreaCoveredInput.value) : null,
+        isodec_mz_window_lb: isodecMzWindowLbInput ? Number(isodecMzWindowLbInput.value) : null,
+        isodec_mz_window_ub: isodecMzWindowUbInput ? Number(isodecMzWindowUbInput.value) : null,
+        isodec_plusone_int_window_lb: isodecPlusoneIntWindowLbInput ? Number(isodecPlusoneIntWindowLbInput.value) : null,
+        isodec_plusone_int_window_ub: isodecPlusoneIntWindowUbInput ? Number(isodecPlusoneIntWindowUbInput.value) : null,
+        isodec_minusone_as_zero: isodecMinusoneAsZeroInput ? isodecMinusoneAsZeroInput.checked : null,
         enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
         enable_h_transfer: hTransferInput ? hTransferInput.checked : null,
         enable_neutral_losses: neutralLossInput ? neutralLossInput.checked : null,
@@ -596,7 +652,9 @@ const startRun = async () => {
     } else if (isDiagnoseMode) {
       lastPrecursorWindow = null;
       applyDiagnoseResults(data);
+      const diagnoseOverlays = buildDiagnoseOverlays(data.results);
       applySpectrum(data.spectrum, data.theory, {
+        overlays: diagnoseOverlays,
         theoryColor: '#8b5cf6',
         mode: 'diagnose',
       });
@@ -676,9 +734,9 @@ resultsSort.addEventListener('change', () => {
     const bCells = b.querySelectorAll('td');
     const safe = (value) => (Number.isFinite(value) ? value : -Infinity);
     const values = {
-      score: [safe(parseFloat(aCells[5].textContent)), safe(parseFloat(bCells[5].textContent))],
-      mz: [safe(parseFloat(aCells[1].textContent)), safe(parseFloat(bCells[1].textContent))],
-      charge: [safe(parseInt(aCells[3].textContent, 10)), safe(parseInt(bCells[3].textContent, 10))],
+      score: [safe(parseFloat(aCells[7].textContent)), safe(parseFloat(bCells[7].textContent))],
+      mz: [safe(parseFloat(aCells[2].textContent)), safe(parseFloat(bCells[2].textContent))],
+      charge: [safe(parseInt(aCells[5].textContent, 10)), safe(parseInt(bCells[5].textContent, 10))],
     };
     return values[key][1] - values[key][0];
   });
@@ -1157,6 +1215,7 @@ const isFragmentsLikeMode = () => {
     mode === 'complex_fragments' ||
     mode === 'precursor' ||
     mode === 'charge_reduced' ||
+    mode === 'diagnose' ||
     mode === 'raw'
   );
 };
