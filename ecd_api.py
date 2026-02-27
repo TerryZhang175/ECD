@@ -19,8 +19,17 @@ import numpy as np
 
 import personalized_config as cfg
 from personalized import load_spectrum, preprocess_spectrum
+from personalized_match import composition_to_formula
 from personalized_modes import run_charge_reduced_headless, run_diagnose_headless, run_fragments_headless, run_precursor_headless, run_raw_headless
-from personalized_sequence import parse_custom_sequence
+from personalized_sequence import (
+    get_disulfide_logic,
+    get_interchain_fragment_composition,
+    ion_composition_from_sequence,
+    ion_series,
+    neutral_loss_variants,
+    parse_custom_sequence,
+)
+from personalized_theory import get_anchor_idx, theoretical_isodist_from_comp
 
 
 app = FastAPI(title="ECD Analyzer API", version="0.1.0")
@@ -152,6 +161,114 @@ def _normalize_color(value: Optional[str]) -> str:
     return mapping.get(color, value or "#0f172a")
 
 
+def _build_full_theoretical_fragments(
+    residues: list[tuple[str, list[str]]],
+    *,
+    mode: str = "fragments",
+) -> list[dict[str, Any]]:
+    seq_len = len(residues)
+    if seq_len < 2:
+        return []
+
+    ion_types: list[str] = []
+    for raw in (cfg.ION_TYPES or []):
+        ion = _normalize_ion_type(str(raw))
+        if ion and ion not in ion_types:
+            ion_types.append(ion)
+    if not ion_types:
+        ion_types = ["b", "c", "y", "z"]
+
+    z_min = max(1, int(getattr(cfg, "FRAG_MIN_CHARGE", 1) or 1))
+    z_max = max(z_min, int(getattr(cfg, "FRAG_MAX_CHARGE", z_min) or z_min))
+    mode_norm = str(mode or "fragments").lower()
+    include_losses = mode_norm != "complex_fragments"
+
+    ion_rank = {"b": 0, "c": 1, "y": 2, "z": 3}
+    seen: set[tuple[Any, ...]] = set()
+    rows: list[dict[str, Any]] = []
+
+    for ion_type in ion_types:
+        for frag_len in range(1, seq_len):
+            try:
+                if mode_norm == "complex_fragments":
+                    frag_name, base_comp = get_interchain_fragment_composition(
+                        residues, ion_type, frag_len, amidated=cfg.AMIDATED
+                    )
+                else:
+                    frag_name, base_comp = ion_composition_from_sequence(
+                        residues, ion_type, frag_len, amidated=cfg.AMIDATED
+                    )
+            except Exception:
+                continue
+
+            cys_variants = get_disulfide_logic(ion_type, frag_len, seq_len) or [("", None)]
+            if not cys_variants:
+                cys_variants = [("", None)]
+
+            for variant_suffix, shift_comp in cys_variants:
+                try:
+                    variant_comp = base_comp + shift_comp if shift_comp is not None else base_comp
+                except Exception:
+                    continue
+
+                if include_losses:
+                    loss_variants = neutral_loss_variants(variant_comp, ion_series_letter=ion_series(ion_type))
+                else:
+                    loss_variants = [("", variant_comp)]
+
+                for loss_suffix, loss_comp in loss_variants:
+                    if loss_comp is None:
+                        continue
+                    formula = composition_to_formula(loss_comp)
+                    for z in range(z_min, z_max + 1):
+                        try:
+                            dist = theoretical_isodist_from_comp(loss_comp, z)
+                        except Exception:
+                            continue
+                        if not isinstance(dist, np.ndarray) or dist.size == 0:
+                            continue
+
+                        anchor_idx = get_anchor_idx(dist)
+                        anchor_mz = float(dist[anchor_idx, 0])
+                        key = (ion_type, frag_len, z, str(variant_suffix or ""), str(loss_suffix or ""), round(anchor_mz, 6))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+
+                        label = f"{frag_name}{variant_suffix or ''}{loss_suffix or ''}^{z}+"
+                        rows.append(
+                            {
+                                "label": label,
+                                "frag_id": f"{frag_name}{variant_suffix or ''}{loss_suffix or ''}",
+                                "ion_type": ion_type,
+                                "series": ion_series(ion_type),
+                                "frag_len": int(frag_len),
+                                "fragment_index": _fragment_index(seq_len, ion_type, frag_len),
+                                "charge": int(z),
+                                "formula": formula,
+                                "variant_suffix": variant_suffix or "",
+                                "loss_suffix": loss_suffix or "",
+                                "anchor_theory_mz": anchor_mz,
+                                "theory_mz": dist[:, 0].astype(float).tolist(),
+                                "theory_intensity": dist[:, 1].astype(float).tolist(),
+                                "score": 0.0,
+                                "css": 0.0,
+                            }
+                        )
+
+    rows.sort(
+        key=lambda r: (
+            ion_rank.get(str(r.get("ion_type", "")), 9),
+            int(r.get("frag_len", 0) or 0),
+            int(r.get("charge", 0) or 0),
+            float(r.get("anchor_theory_mz", 0.0) or 0.0),
+            str(r.get("variant_suffix", "")),
+            str(r.get("loss_suffix", "")),
+        )
+    )
+    return rows
+
+
 @dataclass
 class _CfgOverride:
     key: str
@@ -184,6 +301,13 @@ class FragmentsRunRequest(BaseModel):
     precursor_match_tol_ppm: Optional[float] = Field(None, gt=0, description="Separate ppm tolerance for precursor mode")
     min_cosine: Optional[float] = Field(None, ge=0, le=1)
     isodec_css_thresh: Optional[float] = Field(None, ge=0, le=1)
+    isodec_min_peaks: Optional[int] = Field(None, ge=1)
+    isodec_min_area_covered: Optional[float] = Field(None, ge=0, le=1)
+    isodec_mz_window_lb: Optional[float] = None
+    isodec_mz_window_ub: Optional[float] = None
+    isodec_plusone_int_window_lb: Optional[float] = Field(None, ge=0)
+    isodec_plusone_int_window_ub: Optional[float] = Field(None, ge=0)
+    isodec_minusone_as_zero: Optional[bool] = None
     copies: Optional[int] = Field(None, ge=1)
     amidated: Optional[bool] = None
     disulfide_bonds: Optional[int] = Field(None, ge=0)
@@ -208,6 +332,13 @@ class DiagnoseRunRequest(BaseModel):
     frag_max_charge: Optional[int] = Field(None, ge=1)
     match_tol_ppm: Optional[float] = Field(None, gt=0)
     min_cosine: Optional[float] = Field(None, ge=0, le=1)
+    isodec_min_peaks: Optional[int] = Field(None, ge=1)
+    isodec_min_area_covered: Optional[float] = Field(None, ge=0, le=1)
+    isodec_mz_window_lb: Optional[float] = None
+    isodec_mz_window_ub: Optional[float] = None
+    isodec_plusone_int_window_lb: Optional[float] = Field(None, ge=0)
+    isodec_plusone_int_window_ub: Optional[float] = Field(None, ge=0)
+    isodec_minusone_as_zero: Optional[bool] = None
     copies: Optional[int] = Field(None, ge=1)
     amidated: Optional[bool] = None
     disulfide_bonds: Optional[int] = Field(None, ge=0)
@@ -236,6 +367,13 @@ def get_config() -> dict[str, Any]:
         "precursor_match_tol_ppm": float(getattr(cfg, "PRECURSOR_MATCH_TOL_PPM", cfg.MATCH_TOL_PPM)),
         "min_cosine": float(cfg.MIN_COSINE),
         "isodec_css_thresh": float(cfg.ISODEC_CSS_THRESH),
+        "isodec_min_peaks": int(cfg.ISODEC_MINPEAKS),
+        "isodec_min_area_covered": float(cfg.ISODEC_MIN_AREA_COVERED),
+        "isodec_mz_window_lb": float(cfg.ISODEC_MZ_WINDOW_LB),
+        "isodec_mz_window_ub": float(cfg.ISODEC_MZ_WINDOW_UB),
+        "isodec_plusone_int_window_lb": float(cfg.ISODEC_PLUSONE_INT_WINDOW_LB),
+        "isodec_plusone_int_window_ub": float(cfg.ISODEC_PLUSONE_INT_WINDOW_UB),
+        "isodec_minusone_as_zero": bool(cfg.ISODEC_MINUSONE_AS_ZERO),
         "copies": int(cfg.COPIES),
         "amidated": bool(cfg.AMIDATED),
         "disulfide_bonds": int(cfg.DISULFIDE_BONDS),
@@ -246,6 +384,23 @@ def get_config() -> dict[str, Any]:
         "precursor_calibration": bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)),
         "enable_centroid": bool(getattr(cfg, "ENABLE_CENTROID", False)),
     }
+
+
+def _append_isodec_overrides(overrides: list[_CfgOverride], req: Any) -> None:
+    if getattr(req, "isodec_min_peaks", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_MINPEAKS", int(req.isodec_min_peaks)))
+    if getattr(req, "isodec_min_area_covered", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_MIN_AREA_COVERED", float(req.isodec_min_area_covered)))
+    if getattr(req, "isodec_mz_window_lb", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_MZ_WINDOW_LB", float(req.isodec_mz_window_lb)))
+    if getattr(req, "isodec_mz_window_ub", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_MZ_WINDOW_UB", float(req.isodec_mz_window_ub)))
+    if getattr(req, "isodec_plusone_int_window_lb", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_PLUSONE_INT_WINDOW_LB", float(req.isodec_plusone_int_window_lb)))
+    if getattr(req, "isodec_plusone_int_window_ub", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_PLUSONE_INT_WINDOW_UB", float(req.isodec_plusone_int_window_ub)))
+    if getattr(req, "isodec_minusone_as_zero", None) is not None:
+        overrides.append(_CfgOverride("ISODEC_MINUSONE_AS_ZERO", bool(req.isodec_minusone_as_zero)))
 
 
 def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "fragments") -> list[_CfgOverride]:
@@ -292,6 +447,7 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "
         overrides.append(_CfgOverride("ENABLE_CENTROID", bool(req.enable_centroid)))
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
+    _append_isodec_overrides(overrides, req)
     return overrides
 
 
@@ -334,6 +490,7 @@ def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
+    _append_isodec_overrides(overrides, req)
     return overrides
 
 
@@ -371,6 +528,7 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
+    _append_isodec_overrides(overrides, req)
     return overrides
 
 
@@ -408,11 +566,13 @@ def _run_fragments_impl(
     )
     overrides = _build_overrides(req, filepath, plot_mode=plot_mode)
     precursor_result = None
+    theoretical_fragments: list[dict[str, Any]] = []
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
             isodec_config = cfg.build_isodec_config()
             residues = parse_custom_sequence(cfg.PEPTIDE)
+            theoretical_fragments = _build_full_theoretical_fragments(residues, mode=plot_mode)
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
             if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
@@ -472,6 +632,9 @@ def _run_fragments_impl(
             "best_charge": precursor_result.get("best_z"),
             "best_state": precursor_result.get("best_state"),
             "best_css": _safe_float(precursor_result.get("best_css")),
+            "best_score": _safe_float(precursor_result.get("best_composite_score")),
+            "best_coverage": _safe_float(precursor_result.get("best_coverage")),
+            "best_ppm_rmse": _safe_float(precursor_result.get("best_ppm_rmse")),
             "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
             "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
             "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
@@ -483,6 +646,7 @@ def _run_fragments_impl(
         "scan": req.scan,
         "fragments": fragments,
         "count": len(fragments),
+        "theoretical_fragments": theoretical_fragments,
         "precursor": precursor_summary,
         "spectrum": {
             "mz": spectrum_mz_ds,
@@ -508,11 +672,13 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         req.frag_max_charge,
     )
     overrides = _build_precursor_overrides(req, filepath)
+    theoretical_fragments: list[dict[str, Any]] = []
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
             isodec_config = cfg.build_isodec_config()
             residues = parse_custom_sequence(cfg.PEPTIDE)
+            theoretical_fragments = _build_full_theoretical_fragments(residues, mode="fragments")
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
             result = run_precursor_headless(residues, spectrum, isodec_config)
@@ -539,6 +705,12 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
                 "anchor_theory_mz": _safe_float(cand.get("anchor_theory_mz")),
                 "ppm": _safe_float(cand.get("ppm")),
                 "css": _safe_float(cand.get("css")),
+                "composite_score": _safe_float(cand.get("composite_score", cand.get("score"))),
+                "coverage": _safe_float(cand.get("coverage")),
+                "ppm_rmse": _safe_float(cand.get("ppm_rmse")),
+                "ppm_consistency": _safe_float(cand.get("ppm_consistency")),
+                "spacing_consistency": _safe_float(cand.get("spacing_consistency")),
+                "match_count": int(cand.get("match_count", 0) or 0),
                 "accepted": bool(cand.get("accepted", False)),
                 "iteration": int(cand.get("iteration", 0) or 0),
                 "theory_mz": cand_theory_mz,
@@ -560,6 +732,9 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         "best_charge": result.get("best_z"),
         "best_state": result.get("best_state"),
         "best_css": _safe_float(result.get("best_css")),
+        "best_score": _safe_float(result.get("best_composite_score")),
+        "best_coverage": _safe_float(result.get("best_coverage")),
+        "best_ppm_rmse": _safe_float(result.get("best_ppm_rmse")),
         "shift_ppm": _safe_float(result.get("shift_ppm")),
         "best_obs_mz": _safe_float(result.get("best_obs_mz")),
         "best_theory_mz": _safe_float(result.get("best_theory_mz")),
@@ -581,6 +756,7 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         "precursor": precursor_summary,
         "candidates": candidates,
         "count": len(candidates),
+        "theoretical_fragments": theoretical_fragments,
         "plot_window": plot_window,
         "spectrum": {
             "mz": spectrum_mz_ds,
@@ -606,11 +782,13 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
     )
     overrides = _build_charge_reduced_overrides(req, filepath)
     precursor_result = None
+    theoretical_fragments: list[dict[str, Any]] = []
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
             isodec_config = cfg.build_isodec_config()
             residues = parse_custom_sequence(cfg.PEPTIDE)
+            theoretical_fragments = _build_full_theoretical_fragments(residues, mode="fragments")
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
             if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
@@ -645,7 +823,6 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         anchor_mz = None
         ppm = None
         if isinstance(dist_full, np.ndarray) and dist_full.size:
-            from personalized_theory import get_anchor_idx
             anchor_idx = get_anchor_idx(dist_full)
             anchor_mz = float(dist_full[anchor_idx, 0])
             obs_mz = _safe_float(m.get("obs_mz"))
@@ -690,6 +867,9 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             "best_charge": precursor_result.get("best_z"),
             "best_state": precursor_result.get("best_state"),
             "best_css": _safe_float(precursor_result.get("best_css")),
+            "best_score": _safe_float(precursor_result.get("best_composite_score")),
+            "best_coverage": _safe_float(precursor_result.get("best_coverage")),
+            "best_ppm_rmse": _safe_float(precursor_result.get("best_ppm_rmse")),
             "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
             "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
             "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
@@ -702,6 +882,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         "scan": req.scan,
         "candidates": candidates,
         "count": len(candidates),
+        "theoretical_fragments": theoretical_fragments,
         "overlays": overlays,
         "precursor": precursor_summary,
         "spectrum": {
@@ -721,9 +902,11 @@ def _run_raw_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = N
     filepath = filepath_override or req.filepath
     logger.info("run raw: scan=%s mz=[%s,%s]", req.scan, req.mz_min, req.mz_max)
     overrides = _build_raw_overrides(req, filepath)
+    theoretical_fragments: list[dict[str, Any]] = []
     try:
         with _override_cfg(overrides):
             residues = parse_custom_sequence(cfg.PEPTIDE) if cfg.PEPTIDE else []
+            theoretical_fragments = _build_full_theoretical_fragments(residues, mode="fragments") if residues else []
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
             result = run_raw_headless(spectrum)
@@ -746,6 +929,7 @@ def _run_raw_impl(req: FragmentsRunRequest, filepath_override: Optional[str] = N
         "sequence_raw": sequence_raw,
         "scan": req.scan,
         "count": 0,
+        "theoretical_fragments": theoretical_fragments,
         "spectrum": {
             "mz": spectrum_mz_ds,
             "intensity": spectrum_int_ds,
@@ -921,6 +1105,7 @@ def _build_diagnose_overrides(req: DiagnoseRunRequest, filepath: str) -> list[_C
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
+    _append_isodec_overrides(overrides, req)
     return overrides
 
 
@@ -933,11 +1118,13 @@ def _run_diagnose_impl(req: DiagnoseRunRequest, filepath_override: Optional[str]
         req.h_transfer,
     )
     overrides = _build_diagnose_overrides(req, filepath)
+    theoretical_fragments: list[dict[str, Any]] = []
     try:
         with _override_cfg(overrides):
             cfg.require_isodec_rules()
             isodec_config = cfg.build_isodec_config()
             residues = parse_custom_sequence(cfg.PEPTIDE)
+            theoretical_fragments = _build_full_theoretical_fragments(residues, mode="fragments")
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
             result = run_diagnose_headless(
@@ -977,6 +1164,7 @@ def _run_diagnose_impl(req: DiagnoseRunRequest, filepath_override: Optional[str]
         "results": result.get("results", []),
         "best": result.get("best"),
         "count": len(result.get("results", [])),
+        "theoretical_fragments": theoretical_fragments,
         "spectrum": {
             "mz": spectrum_mz_ds,
             "intensity": spectrum_int_ds,
