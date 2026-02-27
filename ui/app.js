@@ -48,6 +48,7 @@ const diagnoseSpecInput = document.getElementById('diagnoseSpec');
 const diagnoseHTransferSelect = document.getElementById('diagnoseHTransfer');
 const resultsFilter = document.getElementById('resultsFilter');
 const resultsSort = document.getElementById('resultsSort');
+const resultsView = document.getElementById('resultsView');
 const resultsTable = document.getElementById('resultsTable');
 const ionTypeChips = Array.from(document.querySelectorAll('.chip-group .chip'));
 
@@ -57,6 +58,8 @@ let runTimer = null;
 let progress = 0;
 let isRunning = false;
 let coverageRows = null;
+let theoreticalRows = [];
+let activeTableView = 'results';
 let tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
 let manualFilePathOverride = false;
 let coverageGroupMap = new Map();
@@ -238,19 +241,24 @@ const updateResultsTable = (fragments) => {
   });
   tbody.innerHTML = ranked
     .map((frag) => {
+      const isTheoreticalRow = activeTableView === 'theoretical';
       const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
       const ion = frag.displayLabel || ionFallback;
       const formula = frag.formula || '';
-      const obsMz = frag.obsMz != null ? frag.obsMz.toFixed(4) : '';
+      const obsMzValue = isTheoreticalRow ? frag.anchorMz : frag.obsMz;
+      const obsMz = obsMzValue != null ? obsMzValue.toFixed(4) : '';
       const theoryMz = frag.anchorMz != null ? frag.anchorMz.toFixed(4) : '';
-      const ppm = frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '';
-      const centerMz = Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz;
+      const ppm = isTheoreticalRow ? '' : (frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '');
+      const centerMz = Number.isFinite(obsMzValue) ? obsMzValue : frag.anchorMz;
       const charge = frag.charge ? `${frag.charge}+` : '';
-      const intensity = frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '';
+      const intensityValue = isTheoreticalRow ? frag.theoryPeakMax : frag.obsInt;
+      const intensity = intensityValue != null ? Math.round(intensityValue).toLocaleString() : '';
       const scoreValue = Number.isFinite(frag.score) ? frag.score : frag.css;
       const score = scoreValue != null ? scoreValue.toFixed(3) : '';
       const centerAttr = Number.isFinite(centerMz) ? ` data-center-mz="${centerMz}"` : '';
-      const matchAttr = Number.isFinite(frag._idx) ? ` data-match-idx="${frag._idx}"` : '';
+      const matchAttr = Number.isFinite(frag._idx)
+        ? (isTheoreticalRow ? ` data-theory-idx="${frag._idx}"` : ` data-match-idx="${frag._idx}"`)
+        : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
       return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${formula}</td>\n        <td>${obsMz}</td>\n        <td>${theoryMz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
@@ -260,6 +268,38 @@ const updateResultsTable = (fragments) => {
   refreshTableRows();
   applyTableFilter();
   resultsSort.dispatchEvent(new Event('change'));
+};
+
+const buildTheoreticalRows = (rows) => {
+  const source = Array.isArray(rows) ? rows : [];
+  return source
+    .filter((row) => Array.isArray(row.theoryMz) && row.theoryMz.length && Array.isArray(row.theoryIntensity) && row.theoryIntensity.length)
+    .map((row) => ({
+      displayLabel: row.displayLabel || row.label || (row.ionType ? `${row.ionType}${row.fragLen ?? ''}` : 'Theory'),
+      ionType: row.ionType,
+      fragLen: row.fragLen,
+      fragmentIndex: row.fragmentIndex,
+      charge: row.charge,
+      obsMz: null,
+      obsInt: null,
+      css: row.css,
+      score: row.score,
+      anchorMz: Number.isFinite(row.anchorMz) ? row.anchorMz : row.theoryMz[0],
+      label: row.label,
+      formula: row.formula,
+      theoryMz: row.theoryMz,
+      theoryIntensity: row.theoryIntensity,
+      theoryPeakMax: Math.max(...row.theoryIntensity.filter((v) => Number.isFinite(v)), 0),
+      overlayColor: row.overlayColor || '#8b5cf6',
+      target: row.target,
+    }));
+};
+
+const setCoverageRows = (rows) => {
+  coverageRows = Array.isArray(rows) ? rows : [];
+  theoreticalRows = buildTheoreticalRows(coverageRows);
+  const tableData = activeTableView === 'theoretical' ? theoreticalRows : coverageRows;
+  updateResultsTable(tableData);
 };
 
 const applyFragments = (fragments, sequence, mode = 'fragments') => {
@@ -278,13 +318,12 @@ const applyFragments = (fragments, sequence, mode = 'fragments') => {
     theoryIntensity: Array.isArray(frag.theory_intensity) ? frag.theory_intensity : [],
     overlayColor: '#f59e0b',
   }));
-  coverageRows = normalized;
+  setCoverageRows(normalized);
   if (sequence && sequence !== peptideInput.value) {
     peptideInput.value = sequence;
   }
   const statusPrefix = mode === 'complex_fragments' ? 'Complex fragments' : 'Fragments';
   setCoverageStatus(`${statusPrefix}: ${normalized.length}`);
-  updateResultsTable(normalized);
   rerenderCoverage();
 };
 
@@ -315,9 +354,8 @@ const applyPrecursorResults = (data) => {
     theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
     overlayColor: cand.color || '#ef4444',
   }));
-  coverageRows = rows;
+  setCoverageRows(rows);
   hideCoveragePopover();
-  updateResultsTable(rows);
   rerenderCoverage();
 
   const bestCss = toNumberOrNull(summary.best_css);
@@ -362,9 +400,8 @@ const applyChargeReducedResults = (data) => {
       target: cand.target,
     };
   });
-  coverageRows = rows;
+  setCoverageRows(rows);
   hideCoveragePopover();
-  updateResultsTable(rows);
   rerenderCoverage();
   setCoverageStatus(rows.length ? `Charge reduced: ${rows.length} candidates` : 'Charge reduced: no matches', !rows.length);
 };
@@ -374,9 +411,8 @@ const applyRawResults = (data) => {
   if (sequence && sequence !== peptideInput.value) {
     peptideInput.value = sequence;
   }
-  coverageRows = [];
+  setCoverageRows([]);
   hideCoveragePopover();
-  updateResultsTable([]);
   rerenderCoverage();
   setCoverageStatus('Raw spectrum');
 };
@@ -409,9 +445,8 @@ const applyDiagnoseResults = (data) => {
     theoryIntensity: Array.isArray(r.theory_int) ? r.theory_int : [],
     overlayColor: r.ok ? '#22c55e' : '#ef4444',
   }));
-  coverageRows = rows;
+  setCoverageRows(rows);
   hideCoveragePopover();
-  updateResultsTable(rows);
   rerenderCoverage();
 
   const best = data.best;
@@ -726,6 +761,14 @@ const applyTableFilter = () => {
 };
 
 resultsFilter.addEventListener('input', applyTableFilter);
+
+if (resultsView) {
+  resultsView.addEventListener('change', () => {
+    activeTableView = resultsView.value === 'theoretical' ? 'theoretical' : 'results';
+    const tableData = activeTableView === 'theoretical' ? theoreticalRows : coverageRows;
+    updateResultsTable(Array.isArray(tableData) ? tableData : []);
+  });
+}
 
 resultsSort.addEventListener('change', () => {
   const key = resultsSort.value;
@@ -1303,6 +1346,15 @@ const setActiveResultRow = (row) => {
 const handleResultsRowClick = (event) => {
   const row = event.target.closest('tr');
   if (!row || !row.dataset) return;
+  const theoryIdx = Number(row.dataset.theoryIdx);
+  const theoryMatch = Number.isFinite(theoryIdx) && Array.isArray(theoreticalRows) ? theoreticalRows[theoryIdx] : null;
+  if (theoryMatch) {
+    focusSpectrumTheoryForMatch(theoryMatch);
+    zoomSpectrumToMatch({ obsMz: theoryMatch.anchorMz, anchorMz: theoryMatch.anchorMz });
+    setActiveResultRow(row);
+    hideCoveragePopover();
+    return;
+  }
   const matchIdx = Number(row.dataset.matchIdx);
   const match = Number.isFinite(matchIdx) && Array.isArray(coverageRows) ? coverageRows[matchIdx] : null;
   if (match) {
@@ -1539,21 +1591,18 @@ const handleCoverageFile = (file) => {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      coverageRows = parseCoverageRows(String(reader.result || ''));
+      setCoverageRows(parseCoverageRows(String(reader.result || '')));
       setCoverageStatus(`Loaded: ${file.name}`);
-      updateResultsTable(coverageRows);
       rerenderCoverage();
     } catch (error) {
-      coverageRows = null;
+      setCoverageRows([]);
       setCoverageStatus('Invalid fragments CSV', true);
-      updateResultsTable([]);
       rerenderCoverage();
     }
   };
   reader.onerror = () => {
-    coverageRows = null;
+    setCoverageRows([]);
     setCoverageStatus('Failed to read CSV', true);
-    updateResultsTable([]);
     rerenderCoverage();
   };
   reader.readAsText(file);
