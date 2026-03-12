@@ -171,6 +171,24 @@ AMIDATION_FORMULA = "H1N1O-1"
 
 REL_INTENSITY_CUTOFF = 0.01
 
+# Fragment scoring hardening: reduce false positives from noisy/co-eluting envelopes.
+FRAG_MIN_MATCHED_PEAKS = 2
+FRAG_MIN_COVERAGE = 0.25
+FRAG_MAX_ANCHOR_ABS_PPM = None  # None => auto from MATCH_TOL_PPM
+FRAG_MAX_RESIDUAL_RMSE_PPM = None  # None => auto from MATCH_TOL_PPM
+FRAG_PPM_SIGMA = None  # None => auto from MATCH_TOL_PPM
+FRAG_SPACING_SIGMA_DA = None  # None => auto from anchor m/z and MATCH_TOL_PPM
+FRAG_CORE_TOP_N = 3
+FRAG_MAX_UNEXPLAINED_FRAC = 0.70
+FRAG_MAX_MISSING_CORE_FRAC = 0.40
+FRAG_SCORE_W_CSS = 0.40
+FRAG_SCORE_W_COVERAGE = 0.20
+FRAG_SCORE_W_PPM = 0.15
+FRAG_SCORE_W_SPACING = 0.10
+FRAG_SCORE_W_INTENSITY = 0.15
+FRAG_SCORE_PENALTY_UNEXPLAINED = 0.35
+FRAG_SCORE_PENALTY_MISSING_CORE = 0.25
+
 # Anchor mode: which peak in the theoretical isotope envelope to align against the observed spectrum.
 #   "most_intense" — align to the peak with the highest theoretical intensity (default, original behaviour)
 #   "monoisotopic" — align to the monoisotopic (first / lowest m/z) peak

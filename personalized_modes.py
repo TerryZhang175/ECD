@@ -946,6 +946,64 @@ def _composite_match_components(
     }
 
 
+def _fragment_noise_core_components(
+    *,
+    local: np.ndarray,
+    matches: list[dict],
+    dist_shifted: np.ndarray,
+    core_top_n: int,
+    base_score: float,
+    penalty_unexplained: float,
+    penalty_missing_core: float,
+) -> dict:
+    local_int = np.asarray(local[:, 1], dtype=float) if isinstance(local, np.ndarray) and local.size else np.asarray([], dtype=float)
+    local_total = float(np.sum(local_int)) if local_int.size else 0.0
+    matched_obs_indices = sorted(
+        {
+            int(r.get("obs_idx"))
+            for r in matches
+            if r.get("obs_idx") is not None and int(r.get("obs_idx")) >= 0
+        }
+    )
+    explained_obs_sum = float(
+        sum(float(local_int[idx]) for idx in matched_obs_indices if idx < local_int.shape[0])
+    ) if local_total > 0 else 0.0
+    local_explained_fraction = float(np.clip(explained_obs_sum / local_total, 0.0, 1.0)) if local_total > 0 else 0.0
+    unexplained_fraction = float(np.clip(1.0 - local_explained_fraction, 0.0, 1.0))
+
+    theory_int = np.asarray(dist_shifted[:, 1], dtype=float) if isinstance(dist_shifted, np.ndarray) and dist_shifted.size else np.asarray([], dtype=float)
+    positive_idx = np.where(theory_int > 0)[0]
+    core_n = max(1, int(core_top_n))
+    if positive_idx.size:
+        ranked = positive_idx[np.argsort(theory_int[positive_idx])[::-1]]
+        core_idx = ranked[:core_n]
+    else:
+        core_idx = np.asarray([], dtype=int)
+    matched_theory = {
+        int(r.get("theory_idx"))
+        for r in matches
+        if r.get("theory_idx") is not None and int(r.get("theory_idx")) >= 0
+    }
+    if core_idx.size:
+        core_sum = float(np.sum(theory_int[core_idx]))
+        matched_core_sum = float(sum(float(theory_int[idx]) for idx in core_idx if idx in matched_theory))
+        core_coverage = float(np.clip(matched_core_sum / core_sum, 0.0, 1.0)) if core_sum > 0 else 0.0
+    else:
+        core_coverage = 0.0
+    missing_core_fraction = float(np.clip(1.0 - core_coverage, 0.0, 1.0))
+
+    evidence_score = float(base_score) - (float(penalty_unexplained) * unexplained_fraction) - (
+        float(penalty_missing_core) * missing_core_fraction
+    )
+    return {
+        "local_explained_fraction": float(local_explained_fraction),
+        "unexplained_fraction": float(unexplained_fraction),
+        "core_coverage": float(core_coverage),
+        "missing_core_fraction": float(missing_core_fraction),
+        "evidence_score": float(evidence_score),
+    }
+
+
 def run_charge_reduced_headless(residues, spectrum, isodec_config) -> dict:
     spectrum_copy = np.array(spectrum, dtype=float, copy=True)
     spectrum_mz = spectrum_copy[:, 0]
@@ -1498,6 +1556,39 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
     spectrum_mz = spectrum[:, 0]
     spectrum_int = spectrum[:, 1]
     obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
+    match_tol_ppm = float(cfg.MATCH_TOL_PPM)
+    min_matched_peaks = max(1, int(getattr(cfg, "FRAG_MIN_MATCHED_PEAKS", 2)))
+    min_coverage = float(getattr(cfg, "FRAG_MIN_COVERAGE", 0.25))
+    max_anchor_abs_ppm_cfg = getattr(cfg, "FRAG_MAX_ANCHOR_ABS_PPM", None)
+    max_anchor_abs_ppm = float(max_anchor_abs_ppm_cfg) if max_anchor_abs_ppm_cfg is not None else (match_tol_ppm * 1.5)
+    max_residual_rmse_cfg = getattr(cfg, "FRAG_MAX_RESIDUAL_RMSE_PPM", None)
+    max_residual_rmse_ppm = (
+        float(max_residual_rmse_cfg) if max_residual_rmse_cfg is not None else float(match_tol_ppm)
+    )
+    ppm_sigma_cfg = getattr(cfg, "FRAG_PPM_SIGMA", None)
+    ppm_sigma = float(ppm_sigma_cfg) if ppm_sigma_cfg is not None else float(match_tol_ppm)
+    if ppm_sigma <= 0:
+        ppm_sigma = max(match_tol_ppm, 1.0)
+    spacing_sigma_cfg = getattr(cfg, "FRAG_SPACING_SIGMA_DA", None)
+    core_top_n = max(1, int(getattr(cfg, "FRAG_CORE_TOP_N", 3)))
+    max_unexplained_frac = float(getattr(cfg, "FRAG_MAX_UNEXPLAINED_FRAC", 0.70))
+    max_missing_core_frac = float(getattr(cfg, "FRAG_MAX_MISSING_CORE_FRAC", 0.40))
+    score_w_css = float(getattr(cfg, "FRAG_SCORE_W_CSS", 0.40))
+    score_w_cov = float(getattr(cfg, "FRAG_SCORE_W_COVERAGE", 0.20))
+    score_w_ppm = float(getattr(cfg, "FRAG_SCORE_W_PPM", 0.15))
+    score_w_spacing = float(getattr(cfg, "FRAG_SCORE_W_SPACING", 0.10))
+    score_w_intensity = float(getattr(cfg, "FRAG_SCORE_W_INTENSITY", 0.15))
+    score_w_sum = score_w_css + score_w_cov + score_w_ppm + score_w_spacing + score_w_intensity
+    if score_w_sum <= 0:
+        score_w_css, score_w_cov, score_w_ppm, score_w_spacing, score_w_intensity = 0.40, 0.20, 0.15, 0.10, 0.15
+    else:
+        score_w_css /= score_w_sum
+        score_w_cov /= score_w_sum
+        score_w_ppm /= score_w_sum
+        score_w_spacing /= score_w_sum
+        score_w_intensity /= score_w_sum
+    score_penalty_unexplained = float(getattr(cfg, "FRAG_SCORE_PENALTY_UNEXPLAINED", 0.35))
+    score_penalty_missing_core = float(getattr(cfg, "FRAG_SCORE_PENALTY_MISSING_CORE", 0.25))
 
     ion_colors = {
         "b": "tab:blue",
@@ -1670,6 +1761,21 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 if float(np.max(best_pred)) <= 0.0:
                     return None
 
+                dist_model = np.column_stack([sample_mzs.copy(), best_pred.copy()])
+                if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
+                    mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
+                    mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
+                    dist_model = dist_model[(dist_model[:, 0] >= mz_min) & (dist_model[:, 0] <= mz_max)]
+                if dist_model.size == 0:
+                    return None
+                max_model = float(np.max(dist_model[:, 1]))
+                if max_model <= 0.0:
+                    return None
+                keep_model = dist_model[:, 1] >= max_model * float(cfg.REL_INTENSITY_CUTOFF)
+                dist_model = dist_model[keep_model]
+                if dist_model.size == 0:
+                    return None
+
                 anchor_theory_mz = None
                 obs_idx = None
                 obs_mz = None
@@ -1696,7 +1802,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
                         obs_mz_c = float(spectrum_mz[obs_idx_c])
                         obs_int_c = float(spectrum_int[obs_idx_c])
-                    if not within_ppm(obs_mz_c, mz_candidate, float(cfg.MATCH_TOL_PPM)):
+                    if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
                         continue
                     if float(cfg.MIN_OBS_REL_INT) > 0 and obs_int_c < obs_max * float(cfg.MIN_OBS_REL_INT):
                         continue
@@ -1710,22 +1816,9 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     return None
                 ppm = (obs_mz - anchor_theory_mz) / anchor_theory_mz * 1e6
 
-                dist_plot = np.column_stack([sample_mzs.copy(), best_pred.copy()])
+                dist_plot = dist_model.copy()
                 dist_plot[:, 0] += obs_mz - anchor_theory_mz
                 dist_plot[:, 1] *= obs_int / float(np.max(dist_plot[:, 1]))
-
-                if cfg.MZ_MIN is not None or cfg.MZ_MAX is not None:
-                    mz_min = -np.inf if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
-                    mz_max = np.inf if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
-                    dist_plot = dist_plot[(dist_plot[:, 0] >= mz_min) & (dist_plot[:, 0] <= mz_max)]
-                    if dist_plot.size == 0:
-                        return None
-
-                max_plot = float(np.max(dist_plot[:, 1]))
-                keep = dist_plot[:, 1] >= max_plot * float(cfg.REL_INTENSITY_CUTOFF)
-                dist_plot = dist_plot[keep]
-                if dist_plot.size == 0:
-                    return None
 
                 isodec_css = float(best_score)
                 if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
@@ -1748,13 +1841,89 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         obs_idx = nearest_peak_index(spectrum_mz, obs_mz_new)
                         obs_mz = float(spectrum_mz[obs_idx])
                         obs_int = float(spectrum_int[obs_idx])
-                        obs_rel_int = float(obs_int / obs_max) if obs_max > 0 else 0.0
                         ppm = (obs_mz - anchor_theory_mz) / anchor_theory_mz * 1e6
                         dist_plot[:, 0] += obs_mz - old_obs_mz
 
-                frag_id = f"{frag_id_base}{loss_suffix}"
+                local_lb = (
+                    float(isodec_config.mzwindowlb)
+                    if isodec_config is not None and hasattr(isodec_config, "mzwindowlb")
+                    else float(cfg.ISODEC_MZ_WINDOW_LB)
+                )
+                local_ub = (
+                    float(isodec_config.mzwindowub)
+                    if isodec_config is not None and hasattr(isodec_config, "mzwindowub")
+                    else float(cfg.ISODEC_MZ_WINDOW_UB)
+                )
+                local_centroids = get_local_centroids_window(
+                    spectrum_mz,
+                    spectrum_int,
+                    obs_mz,
+                    local_lb,
+                    local_ub,
+                    force_hill=bool(use_centroid_logic),
+                )
+                if not isinstance(local_centroids, np.ndarray) or local_centroids.size == 0:
+                    local_mask = (spectrum_mz >= obs_mz + local_lb) & (spectrum_mz <= obs_mz + local_ub)
+                    if not np.any(local_mask):
+                        return None
+                    local_centroids = np.column_stack((spectrum_mz[local_mask], spectrum_int[local_mask]))
+                if local_centroids.ndim != 2 or local_centroids.shape[1] != 2:
+                    return None
+
+                local_max_int = float(np.max(local_centroids[:, 1])) if local_centroids.size else 0.0
+                if local_max_int <= 0.0:
+                    return None
                 obs_rel_int = float(obs_int / obs_max) if obs_max > 0 else 0.0
-                label_parts = [f"{frag_id}^{z}+", f"{ppm:.1f} ppm", f"css={isodec_css:.3f}"]
+                anchor_rel_int = float(np.clip(obs_int / local_max_int, 0.0, 1.0))
+                shift_da_local = float(obs_mz - anchor_theory_mz)
+                local_matches = _match_theory_local_monotonic(local_centroids, dist_model, shift_da_local, match_tol_ppm)
+                if spacing_sigma_cfg is None:
+                    spacing_sigma_da = abs(anchor_theory_mz) * match_tol_ppm * 1e-6
+                else:
+                    spacing_sigma_da = float(spacing_sigma_cfg)
+                if spacing_sigma_da <= 0:
+                    spacing_sigma_da = max(abs(anchor_theory_mz) * match_tol_ppm * 1e-6, 1e-6)
+                comp = _composite_match_components(
+                    css=float(isodec_css),
+                    matches=local_matches,
+                    dist_shifted=dist_model,
+                    anchor_ppm_abs=abs(float(ppm)),
+                    anchor_theory_mz=float(anchor_theory_mz),
+                    intensity_ratio=float(anchor_rel_int),
+                    ppm_sigma=float(ppm_sigma),
+                    spacing_sigma_da=float(spacing_sigma_da),
+                    score_w_css=float(score_w_css),
+                    score_w_cov=float(score_w_cov),
+                    score_w_ppm=float(score_w_ppm),
+                    score_w_spacing=float(score_w_spacing),
+                    score_w_intensity=float(score_w_intensity),
+                )
+                quality = _fragment_noise_core_components(
+                    local=local_centroids,
+                    matches=local_matches,
+                    dist_shifted=dist_model,
+                    core_top_n=int(core_top_n),
+                    base_score=float(comp["composite_score"]),
+                    penalty_unexplained=float(score_penalty_unexplained),
+                    penalty_missing_core=float(score_penalty_missing_core),
+                )
+
+                accepted = bool(
+                    float(isodec_css) >= float(cfg.MIN_COSINE)
+                    and abs(float(ppm)) <= float(max_anchor_abs_ppm)
+                    and len(local_matches) >= int(min_matched_peaks)
+                    and float(comp["coverage"]) >= float(min_coverage)
+                    and float(quality["unexplained_fraction"]) <= float(max_unexplained_frac)
+                    and float(quality["missing_core_fraction"]) <= float(max_missing_core_frac)
+                )
+                if len(local_matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
+                    accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
+                if not accepted:
+                    return None
+
+                frag_id = f"{frag_id_base}{loss_suffix}"
+                evidence_score = float(quality["evidence_score"])
+                label_parts = [f"{frag_id}^{z}+", f"{ppm:.1f} ppm", f"score={evidence_score:.3f}", f"css={isodec_css:.3f}"]
                 if best_model != "neutral":
                     h_pct = 100.0 * float(best_weights.get("+H", 0.0) + best_weights.get("-H", 0.0))
                     h2_pct = 100.0 * float(best_weights.get("+2H", 0.0) + best_weights.get("-2H", 0.0))
@@ -1779,9 +1948,21 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "obs_rel_int": obs_rel_int,
                     "anchor_theory_mz": float(anchor_theory_mz),
                     "ppm": float(ppm),
-                    "score": float(isodec_css),
+                    "score": float(evidence_score),
+                    "css": float(isodec_css),
+                    "composite_score": float(evidence_score),
                     "raw_score": float(best_score),
                     "neutral_score": float(neutral_score),
+                    "coverage": float(comp["coverage"]),
+                    "ppm_rmse": float(comp["ppm_rmse"]),
+                    "ppm_consistency": float(comp["ppm_consistency"]),
+                    "spacing_consistency": float(comp["spacing_consistency"]),
+                    "spacing_rmse_da": float(comp["spacing_rmse_da"]),
+                    "match_count": int(len(local_matches)),
+                    "local_explained_fraction": float(quality["local_explained_fraction"]),
+                    "unexplained_fraction": float(quality["unexplained_fraction"]),
+                    "core_coverage": float(quality["core_coverage"]),
+                    "missing_core_fraction": float(quality["missing_core_fraction"]),
                     "h_weights": best_weights,
                     "dist": dist_plot,
                     "label": label,
@@ -1890,11 +2071,32 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
             best_by_obs[key] = m
             continue
         cur = best_by_obs[key]
-        if m["score"] > cur["score"] or (m["score"] == cur["score"] and m["obs_int"] > cur["obs_int"]):
+        m_score = float(m.get("score", m.get("css", float("-inf"))))
+        cur_score = float(cur.get("score", cur.get("css", float("-inf"))))
+        if (
+            m_score > cur_score
+            or (
+                m_score == cur_score
+                and float(m.get("coverage", 0.0)) > float(cur.get("coverage", 0.0))
+            )
+            or (
+                m_score == cur_score
+                and float(m.get("coverage", 0.0)) == float(cur.get("coverage", 0.0))
+                and m["obs_int"] > cur["obs_int"]
+            )
+        ):
             best_by_obs[key] = m
 
     best = list(best_by_obs.values())
-    best.sort(key=lambda d: (d["score"], d["obs_int"]), reverse=True)
+    best.sort(
+        key=lambda d: (
+            float(d.get("score", d.get("css", 0.0))),
+            float(d.get("coverage", 0.0)),
+            float(d.get("css", 0.0)),
+            d["obs_int"],
+        ),
+        reverse=True,
+    )
     if cfg.MAX_PLOTTED_FRAGMENTS is not None:
         best = best[: int(cfg.MAX_PLOTTED_FRAGMENTS)]
 
@@ -1904,7 +2106,9 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
             print(
                 f"{m['label']}\tI={m['obs_int']:.3g}\t"
                 f"anchor={m['anchor_theory_mz']:.4f}->{m['obs_mz']:.4f}\t"
-                f"cos0={m['neutral_score']:.3f}\trawcos={m['raw_score']:.3f}"
+                f"cov={float(m.get('coverage', 0.0)):.3f}\t"
+                f"unexp={float(m.get('unexplained_fraction', 0.0)):.3f}\t"
+                f"rawcos={m['raw_score']:.3f}"
             )
 
         if bool(cfg.EXPORT_FRAGMENTS_CSV):
@@ -1951,9 +2155,17 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         "obs_rel_int": m.get("obs_rel_int", ""),
                         "anchor_theory_mz": m.get("anchor_theory_mz", ""),
                         "anchor_ppm": m.get("ppm", ""),
-                        "css": m.get("score", ""),
+                        "score": m.get("score", ""),
+                        "css": m.get("css", ""),
                         "rawcos": m.get("raw_score", ""),
                         "cos0": m.get("neutral_score", ""),
+                        "coverage": m.get("coverage", ""),
+                        "ppm_rmse": m.get("ppm_rmse", ""),
+                        "match_count": m.get("match_count", ""),
+                        "local_explained_fraction": m.get("local_explained_fraction", ""),
+                        "unexplained_fraction": m.get("unexplained_fraction", ""),
+                        "core_coverage": m.get("core_coverage", ""),
+                        "missing_core_fraction": m.get("missing_core_fraction", ""),
                         "w0": h.get("0", ""),
                         "w_plusH": h.get("+H", ""),
                         "w_plus2H": h.get("+2H", ""),
@@ -1987,7 +2199,8 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                                 "variant_pass_count": m.get("variant_pass_count", ""),
                                 "%H": pct_h,
                                 "%2H": pct_2h,
-                                "css": m.get("score", ""),
+                                "score": m.get("score", ""),
+                                "css": m.get("css", ""),
                                 "rawcos": m.get("raw_score", ""),
                                 "theory_mz": p.get("theory_mz", ""),
                                 "theory_int": p.get("theory_int", ""),
@@ -2024,9 +2237,17 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "obs_rel_int",
                     "anchor_theory_mz",
                     "anchor_ppm",
+                    "score",
                     "css",
                     "rawcos",
                     "cos0",
+                    "coverage",
+                    "ppm_rmse",
+                    "match_count",
+                    "local_explained_fraction",
+                    "unexplained_fraction",
+                    "core_coverage",
+                    "missing_core_fraction",
                     "w0",
                     "w_plusH",
                     "w_plus2H",
@@ -2052,6 +2273,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "variant_pass_count",
                     "%H",
                     "%2H",
+                    "score",
                     "css",
                     "rawcos",
                     "theory_mz",
