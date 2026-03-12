@@ -401,19 +401,9 @@ def run_precursor_headless(
             "composite_score": float(composite_score),
         }
 
-    work_spectrum = np.array(spectrum, dtype=float, copy=True)
-    search_window = None
-    search_mz_min = None if cfg.MZ_MIN is None else float(cfg.MZ_MIN)
-    search_mz_max = None if cfg.MZ_MAX is None else float(cfg.MZ_MAX)
-    if search_mz_min is not None or search_mz_max is not None:
-        lower = -np.inf if search_mz_min is None else float(search_mz_min)
-        upper = np.inf if search_mz_max is None else float(search_mz_max)
-        keep = (work_spectrum[:, 0] >= lower) & (work_spectrum[:, 0] <= upper)
-        work_spectrum = work_spectrum[keep]
-        search_window = {
-            "min": None if search_mz_min is None else float(search_mz_min),
-            "max": None if search_mz_max is None else float(search_mz_max),
-        }
+    search_spectrum, search_window = _filter_spectrum_by_requested_mz_window(np.array(spectrum, dtype=float, copy=True))
+    search_mz = np.asarray(search_spectrum[:, 0], dtype=float) if search_spectrum.size else np.asarray([], dtype=float)
+    search_int = np.asarray(search_spectrum[:, 1], dtype=float) if search_spectrum.size else np.asarray([], dtype=float)
     match_found = False
     best_z = None
     best_state = None
@@ -430,10 +420,13 @@ def run_precursor_headless(
     window_da = float(getattr(cfg, "PRECURSOR_WINDOW_DA", 5.1))
     if not np.isfinite(window_da) or window_da <= 0:
         window_da = 5.1
+    anchor_search_da = max(float(window_da) / 2.0, 1.0)
+    _use_monoisotopic = str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic"
+    all_candidates: list[dict] = []
 
     print(
-        f"--- Starting Precursor Search (Max iterations: {int(cfg.PRECURSOR_SEARCH_ITERATIONS)}, "
-        f"window={window_da:.2f} Da) ---"
+        f"--- Starting Precursor Search (candidate-driven anchor search, "
+        f"anchor_window={anchor_search_da:.2f} Da) ---"
     )
     if search_window is not None:
         print(
@@ -441,227 +434,219 @@ def run_precursor_headless(
             f"[{search_window['min'] if search_window['min'] is not None else '-inf'}, "
             f"{search_window['max'] if search_window['max'] is not None else '+inf'}]."
         )
+    if search_spectrum.size:
+        for z, theory in precursor_theories.items():
+            base_dist = theory.get("dist")
+            if not isinstance(base_dist, np.ndarray) or base_dist.size == 0:
+                continue
 
-    for iteration in range(1, int(cfg.PRECURSOR_SEARCH_ITERATIONS) + 1):
-        if work_spectrum.size == 0:
-            break
-
-        window = _find_most_intense_window(work_spectrum[:, 0], work_spectrum[:, 1], window_da)
-        if window is None:
-            break
-        start_idx = int(window["start_idx"])
-        end_idx = int(window["end_idx"])
-        window_min = float(window["mz_min"])
-        window_max = float(window["mz_max"])
-        if end_idx <= start_idx:
-            keep_mask = (work_spectrum[:, 0] < window_min) | (work_spectrum[:, 0] > window_max)
-            work_spectrum = work_spectrum[keep_mask]
-            print(
-                f"Iteration {iteration}: empty window [{window_min:.4f}, {window_max:.4f}] removed; retrying."
-            )
-            continue
-
-        windowed = work_spectrum[start_idx:end_idx]
-        raw_obs_mz = float(windowed[np.argmax(windowed[:, 1]), 0])
-
-        _use_monoisotopic = str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic"
-
-        def _score_precursor_window(*, use_centroid_logic: bool):
-            # Get local peaks/centroids under a forced strategy.
-            local = get_local_centroids_window(
-                work_spectrum[:, 0],
-                work_spectrum[:, 1],
-                raw_obs_mz,
-                lb=window_min - raw_obs_mz,
-                ub=window_max - raw_obs_mz,
-                force_hill=bool(use_centroid_logic),
-            )
-            if not isinstance(local, np.ndarray) or local.size == 0:
-                local = windowed
-            if local.ndim != 2 or local.shape[1] != 2:
-                return None
-
-            # Default local anchor (most-intense) for fallback and most_intense mode.
-            idx_default = int(np.argmax(local[:, 1]))
-            obs_mz_default = float(local[idx_default, 0])
-            obs_anchor_int_default = float(local[idx_default, 1])
-            local_max_int = float(np.max(local[:, 1])) if local.shape[0] > 0 else 0.0
-
-            candidate_states = []
-            for z, theory in precursor_theories.items():
-                # In monoisotopic mode use the theory monoisotopic m/z (index 0) for window check
-                if _use_monoisotopic:
-                    ref_mz_check = float(theory["dist"][0, 0])
-                else:
-                    ref_mz_check = obs_mz_default
-                mz_pad = precursor_tol_ppm * 1e-6 * float(ref_mz_check) if ref_mz_check > 0 else 0.0
-                base_min = float(theory["mz_min"])
-                base_max = float(theory["mz_max"])
-                for state, h_shift in state_shifts:
-                    shift_mz = (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
-                    mz_min_w = base_min + shift_mz - mz_pad
-                    mz_max_w = base_max + shift_mz + mz_pad
-                    if _use_monoisotopic:
-                        # Check whether the theoretical monoisotopic peak falls in our window
-                        mono_theory_mz = float(theory["dist"][0, 0]) + float(shift_mz)
-                        if window_min - mz_pad <= mono_theory_mz <= window_max + mz_pad:
-                            candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
-                    else:
-                        if mz_min_w <= obs_mz_default <= mz_max_w:
-                            candidate_states.append((int(z), str(state), int(h_shift), float(shift_mz)))
-
-            scored_candidates: list[dict] = []
-            for z, state, h_shift, shift_mz in candidate_states:
-                dist = precursor_theories[z]["dist"]
+            for state, h_shift in state_shifts:
+                shift_mz = (float(h_shift) * float(cfg.H_TRANSFER_MASS)) / float(z)
                 if h_shift:
-                    dist_shifted = dist.copy()
+                    dist_shifted = base_dist.copy()
                     dist_shifted[:, 0] += shift_mz
                 else:
-                    dist_shifted = dist
-                theory_mz = float(precursor_theories[z]["anchor_mz"]) + float(shift_mz)
-                anchor_target_mz = float(dist_shifted[0, 0]) if _use_monoisotopic else float(theory_mz)
-                anchor_indices = _build_anchor_indices(local, anchor_target_mz, anchor_top_k, precursor_tol_ppm)
-                if not anchor_indices:
-                    anchor_indices = [idx_default]
-                local_best_for_state: dict | None = None
-                for anchor_idx in anchor_indices:
-                    anchor_idx = int(anchor_idx)
-                    obs_mz_seed = float(local[anchor_idx, 0])
-                    obs_anchor_int = float(local[anchor_idx, 1])
-                    obs_mz_eval = float(obs_mz_seed)
-                    if cfg.ENABLE_ISODEC_RULES and local_isodec_config is not None:
-                        accepted_model, isodec_css, shifted_peak = isodec_css_and_accept(
-                            local, dist_shifted, z=z, peakmz=obs_mz_seed, config=local_isodec_config
-                        )
-                        if shifted_peak is not None:
-                            obs_mz_eval = float(shifted_peak)
-                    else:
-                        y_obs_seed = observed_intensities_isodec(
-                            local[:, 0],
-                            local[:, 1],
-                            dist_shifted[:, 0],
-                            z=int(z),
-                            match_tol_ppm=precursor_tol_ppm,
-                            peak_mz=obs_mz_seed,
-                        )
-                        isodec_css = css_similarity(y_obs_seed, dist_shifted[:, 1])
-                        accepted_model = isodec_css >= float(cfg.MIN_COSINE)
+                    dist_shifted = base_dist
 
-                    obs_idx_eval = int(nearest_peak_index(local[:, 0], obs_mz_eval))
-                    if obs_idx_eval >= 0:
-                        obs_anchor_int = float(local[obs_idx_eval, 1])
-                    anchor_rel_int = (float(obs_anchor_int) / local_max_int) if local_max_int > 0 else 0.0
-
-                    shift_da = float(obs_mz_eval - theory_mz)
-                    matches = _match_theory_local(local, dist_shifted, shift_da, precursor_tol_ppm)
-                    anchor_ppm_abs = abs(((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6) if theory_mz else 0.0
-                    comp = _composite_components(
-                        css=float(isodec_css),
-                        matches=matches,
-                        dist_shifted=dist_shifted,
-                        anchor_ppm_abs=float(anchor_ppm_abs),
-                        anchor_theory_mz=float(theory_mz),
-                        intensity_ratio=float(anchor_rel_int),
-                    )
-                    ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
-                    accepted = bool(
-                        bool(accepted_model)
-                        and float(isodec_css) >= float(cfg.MIN_COSINE)
-                        and float(anchor_rel_int) >= float(anchor_min_rel_int)
-                        and float(comp["coverage"]) >= float(min_coverage)
-                        and float(anchor_ppm_abs) <= float(max_anchor_abs_ppm)
-                        and len(matches) > 0
-                    )
-                    if len(matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
-                        accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
-                    dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
-                    candidate = {
-                        "charge": int(z),
-                        "state": str(state),
-                        "obs_mz": float(obs_mz_eval),
-                        "anchor_theory_mz": theory_mz,
-                        "ppm": float(ppm),
-                        "css": float(isodec_css),
-                        "accepted": bool(accepted),
-                        "iteration": int(iteration),
-                        "dist": dist_plot,
-                        "obs_anchor_int": float(obs_anchor_int),
-                        "score": float(comp["composite_score"]),
-                        "composite_score": float(comp["composite_score"]),
-                        "coverage": float(comp["coverage"]),
-                        "ppm_rmse": float(comp["ppm_rmse"]),
-                        "ppm_consistency": float(comp["ppm_consistency"]),
-                        "spacing_consistency": float(comp["spacing_consistency"]),
-                        "spacing_rmse_da": float(comp["spacing_rmse_da"]),
-                        "intensity_prior": float(comp["intensity_prior"]),
-                        "anchor_rel_int": float(anchor_rel_int),
-                        "match_count": int(len(matches)),
-                        "anchor_seed_mz": float(obs_mz_seed),
-                        "anchor_target_mz": float(anchor_target_mz),
-                    }
-                    if local_best_for_state is None or float(candidate["composite_score"]) > float(
-                        local_best_for_state.get("composite_score", -1.0)
-                    ):
-                        local_best_for_state = candidate
-                    scored_candidates.append(candidate)
-
-                if local_best_for_state is not None:
-                    prev = best_by_charge.get(int(z))
-                    prev_score = float(prev.get("composite_score", prev.get("css", -1.0))) if prev is not None else -1.0
-                    if prev is None or float(local_best_for_state["composite_score"]) > prev_score:
-                        best_by_charge[int(z)] = local_best_for_state
-
-            accepted_ranked = sorted(
-                [c for c in scored_candidates if bool(c.get("accepted", False))],
-                key=lambda d: float(d.get("composite_score", d.get("css", -1.0))),
-                reverse=True,
-            )
-            if not accepted_ranked:
-                return None
-            if ambiguity_guard and len(accepted_ranked) >= 2:
-                gap = float(accepted_ranked[0].get("composite_score", 0.0)) - float(
-                    accepted_ranked[1].get("composite_score", 0.0)
+                theory_mz = float(dist_shifted[0, 0]) if _use_monoisotopic else float(dist_shifted[get_anchor_idx(dist_shifted), 0])
+                anchor_window_mask = (
+                    (search_mz >= theory_mz - anchor_search_da)
+                    & (search_mz <= theory_mz + anchor_search_da)
                 )
-                if gap < float(ambiguity_margin):
-                    top_candidates = [dict(c) for c in accepted_ranked[: min(3, len(accepted_ranked))]]
-                    return {
-                        "status": "ambiguous",
-                        "accepted": False,
-                        "ambiguous": True,
-                        "iteration": int(iteration),
-                        "window_min": float(window_min),
-                        "window_max": float(window_max),
-                        "score": float(top_candidates[0].get("composite_score", 0.0)),
-                        "css": float(top_candidates[0].get("css", 0.0)),
-                        "top_candidates": top_candidates,
-                    }
-            accepted_best = dict(accepted_ranked[0])
-            accepted_best["status"] = "accepted"
-            return accepted_best
+                if not np.any(anchor_window_mask):
+                    continue
 
-        best_candidate = execute_hybrid_strategy(_score_precursor_window)
-        if best_candidate is not None and best_candidate.get("status") == "ambiguous":
-            ambiguous_result = dict(best_candidate)
-            top_candidates = ambiguous_result.get("top_candidates") or []
-            if first_anchor_int is None and top_candidates:
-                try:
-                    first_anchor_int = float(top_candidates[0].get("obs_anchor_int", 0.0))
-                except Exception:
-                    first_anchor_int = 0.0
-            print(
-                f"Iteration {iteration}: ambiguous window [{window_min:.4f}, {window_max:.4f}] "
-                f"top score={float(ambiguous_result.get('score', 0.0)):.3f}; stopping without calibration."
-            )
-            break
+                anchor_window_idx = np.where(anchor_window_mask)[0]
+                ranked_anchor_idx = anchor_window_idx[np.argsort(search_int[anchor_window_idx])[::-1]]
+                nearest_anchor_idx = int(
+                    anchor_window_idx[np.argmin(np.abs(search_mz[anchor_window_idx] - theory_mz))]
+                )
+                selected_anchor_idx: list[int] = []
+                for idx in [nearest_anchor_idx, *ranked_anchor_idx[:anchor_top_k].tolist()]:
+                    i = int(idx)
+                    if i not in selected_anchor_idx:
+                        selected_anchor_idx.append(i)
 
-        if best_candidate is not None and first_anchor_int is None:
+                left_span = max(float(theory_mz - dist_shifted[0, 0]), 0.0)
+                right_span = max(float(dist_shifted[-1, 0] - theory_mz), 0.0)
+                anchor_pad_da = max(abs(float(theory_mz)) * float(precursor_tol_ppm) * 3e-6, 0.5)
+                local_lb = -(left_span + anchor_pad_da)
+                local_ub = right_span + anchor_pad_da
+
+                def _score_precursor_candidate(*, use_centroid_logic: bool):
+                    local_best_for_state: dict | None = None
+                    for obs_idx_global in selected_anchor_idx:
+                        obs_anchor_mz = float(search_mz[int(obs_idx_global)])
+                        local = get_local_centroids_window(
+                            search_mz,
+                            search_int,
+                            center_mz=obs_anchor_mz,
+                            lb=local_lb,
+                            ub=local_ub,
+                            force_hill=bool(use_centroid_logic),
+                        )
+                        if not isinstance(local, np.ndarray) or local.size == 0:
+                            local_mask = (
+                                (search_mz >= obs_anchor_mz + local_lb)
+                                & (search_mz <= obs_anchor_mz + local_ub)
+                            )
+                            if not np.any(local_mask):
+                                continue
+                            local = np.column_stack((search_mz[local_mask], search_int[local_mask]))
+                        if local.ndim != 2 or local.shape[1] != 2:
+                            continue
+
+                        local_max_int = float(np.max(local[:, 1])) if local.shape[0] > 0 else 0.0
+                        if local_max_int <= 0:
+                            continue
+
+                        anchor_indices = _build_anchor_indices(local, theory_mz, anchor_top_k, precursor_tol_ppm)
+                        if not anchor_indices:
+                            anchor_indices = [int(np.argmin(np.abs(local[:, 0] - obs_anchor_mz)))]
+
+                        for anchor_idx in anchor_indices:
+                            anchor_idx = int(anchor_idx)
+                            obs_mz_seed = float(local[anchor_idx, 0])
+                            obs_anchor_int = float(local[anchor_idx, 1])
+                            obs_mz_eval = float(obs_mz_seed)
+                            if cfg.ENABLE_ISODEC_RULES and local_isodec_config is not None:
+                                accepted_model, isodec_css, shifted_peak = isodec_css_and_accept(
+                                    local, dist_shifted, z=int(z), peakmz=obs_mz_seed, config=local_isodec_config
+                                )
+                                if shifted_peak is not None:
+                                    obs_mz_eval = float(shifted_peak)
+                            else:
+                                y_obs_seed = observed_intensities_isodec(
+                                    local[:, 0],
+                                    local[:, 1],
+                                    dist_shifted[:, 0],
+                                    z=int(z),
+                                    match_tol_ppm=precursor_tol_ppm,
+                                    peak_mz=obs_mz_seed,
+                                )
+                                isodec_css = css_similarity(y_obs_seed, dist_shifted[:, 1])
+                                accepted_model = isodec_css >= float(cfg.MIN_COSINE)
+
+                            obs_idx_eval = int(nearest_peak_index(local[:, 0], obs_mz_eval))
+                            if obs_idx_eval >= 0:
+                                obs_anchor_int = float(local[obs_idx_eval, 1])
+                            anchor_rel_int = (float(obs_anchor_int) / local_max_int) if local_max_int > 0 else 0.0
+
+                            shift_da = float(obs_mz_eval - theory_mz)
+                            matches = _match_theory_local(local, dist_shifted, shift_da, precursor_tol_ppm)
+                            anchor_ppm_abs = abs(((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6) if theory_mz else 0.0
+                            comp = _composite_components(
+                                css=float(isodec_css),
+                                matches=matches,
+                                dist_shifted=dist_shifted,
+                                anchor_ppm_abs=float(anchor_ppm_abs),
+                                anchor_theory_mz=float(theory_mz),
+                                intensity_ratio=float(anchor_rel_int),
+                            )
+                            ppm = ((float(obs_mz_eval) - theory_mz) / theory_mz) * 1e6 if theory_mz else 0.0
+                            accepted = bool(
+                                bool(accepted_model)
+                                and float(isodec_css) >= float(cfg.MIN_COSINE)
+                                and float(anchor_rel_int) >= float(anchor_min_rel_int)
+                                and float(comp["coverage"]) >= float(min_coverage)
+                                and float(anchor_ppm_abs) <= float(max_anchor_abs_ppm)
+                                and len(matches) > 0
+                            )
+                            if len(matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
+                                accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
+                            if not accepted:
+                                continue
+
+                            dist_plot = _scale_dist_to_obs(dist_shifted, obs_anchor_int)
+                            candidate = {
+                                "charge": int(z),
+                                "state": str(state),
+                                "obs_mz": float(obs_mz_eval),
+                                "anchor_theory_mz": theory_mz,
+                                "ppm": float(ppm),
+                                "css": float(isodec_css),
+                                "accepted": True,
+                                "iteration": 1,
+                                "dist": dist_plot,
+                                "obs_anchor_int": float(obs_anchor_int),
+                                "score": float(comp["composite_score"]),
+                                "composite_score": float(comp["composite_score"]),
+                                "coverage": float(comp["coverage"]),
+                                "ppm_rmse": float(comp["ppm_rmse"]),
+                                "ppm_consistency": float(comp["ppm_consistency"]),
+                                "spacing_consistency": float(comp["spacing_consistency"]),
+                                "spacing_rmse_da": float(comp["spacing_rmse_da"]),
+                                "intensity_prior": float(comp["intensity_prior"]),
+                                "anchor_rel_int": float(anchor_rel_int),
+                                "match_count": int(len(matches)),
+                                "anchor_seed_mz": float(obs_mz_seed),
+                                "anchor_target_mz": float(theory_mz),
+                                "local_window_min": float(obs_anchor_mz + local_lb),
+                                "local_window_max": float(obs_anchor_mz + local_ub),
+                            }
+                            if local_best_for_state is None or float(candidate["composite_score"]) > float(
+                                local_best_for_state.get("composite_score", -1.0)
+                            ):
+                                local_best_for_state = candidate
+
+                    return local_best_for_state
+
+                best_candidate = execute_hybrid_strategy(_score_precursor_candidate)
+                if best_candidate is None:
+                    continue
+                all_candidates.append(best_candidate)
+                prev = best_by_charge.get(int(z))
+                prev_score = float(prev.get("composite_score", prev.get("css", -1.0))) if prev is not None else -1.0
+                if prev is None or float(best_candidate.get("composite_score", 0.0)) > prev_score:
+                    best_by_charge[int(z)] = best_candidate
+
+    accepted_ranked = sorted(
+        all_candidates,
+        key=lambda d: float(d.get("composite_score", d.get("css", -1.0))),
+        reverse=True,
+    )
+    candidates = sorted(
+        best_by_charge.values(),
+        key=lambda d: float(d.get("composite_score", d.get("css", -1.0))),
+        reverse=True,
+    )
+
+    if accepted_ranked:
+        top_candidate = dict(accepted_ranked[0])
+        if first_anchor_int is None:
             try:
-                first_anchor_int = float(best_candidate.get("obs_anchor_int", 0.0))
+                first_anchor_int = float(top_candidate.get("obs_anchor_int", 0.0))
             except Exception:
                 first_anchor_int = 0.0
-
-        if best_candidate is not None:
+        if ambiguity_guard and len(accepted_ranked) >= 2:
+            gap = float(accepted_ranked[0].get("composite_score", 0.0)) - float(
+                accepted_ranked[1].get("composite_score", 0.0)
+            )
+            if gap < float(ambiguity_margin):
+                top_candidates = [dict(c) for c in accepted_ranked[: min(3, len(accepted_ranked))]]
+                ambiguous_result = {
+                    "status": "ambiguous",
+                    "accepted": False,
+                    "ambiguous": True,
+                    "iteration": 1,
+                    "window_min": float(top_candidates[0].get("local_window_min", top_candidates[0].get("anchor_theory_mz", 0.0))),
+                    "window_max": float(top_candidates[0].get("local_window_max", top_candidates[0].get("anchor_theory_mz", 0.0))),
+                    "score": float(top_candidates[0].get("composite_score", 0.0)),
+                    "css": float(top_candidates[0].get("css", 0.0)),
+                    "top_candidates": top_candidates,
+                }
+                print(
+                    "Precursor search ambiguous: "
+                    f"top score={float(ambiguous_result.get('score', 0.0)):.3f}; "
+                    "stopping without calibration."
+                )
+            else:
+                match_found = True
+        else:
             match_found = True
+
+        if match_found:
+            best_candidate = top_candidate
             best_z = int(best_candidate["charge"])
             best_state = best_candidate.get("state")
             best_css = float(best_candidate["css"])
@@ -680,17 +665,10 @@ def run_precursor_headless(
             strat = best_candidate.get("strategy")
             strat_label = f" [{strat}]" if strat else ""
             print(
-                f"Precursor found in iteration {iteration}: z={best_z}+{state_label}{strat_label} "
+                f"Precursor found: z={best_z}+{state_label}{strat_label} "
                 f"m/z={best_obs_mz:.4f} css={best_css:.3f} "
                 f"score={float(best_candidate.get('composite_score', best_css)):.3f}"
             )
-            break
-
-        keep_mask = (work_spectrum[:, 0] < window_min) | (work_spectrum[:, 0] > window_max)
-        work_spectrum = work_spectrum[keep_mask]
-        print(
-            f"Iteration {iteration}: window [{window_min:.4f}, {window_max:.4f}] failed CSS; blanking and retrying."
-        )
 
     calibrated_spectrum = np.array(spectrum, dtype=float, copy=True)
     calibration_applied = False
