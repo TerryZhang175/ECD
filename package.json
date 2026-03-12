@@ -1,0 +1,24 @@
+{
+  "name": "ecd",
+  "version": "1.0.0",
+  "description": "ECD Analyzer is a focused mass spectrometry (MS/MS) tool for Electron Capture Dissociation (ECD) data. It provides: - A configurable Python analysis pipeline - A FastAPI backend for programmatic access - A lightweight vanilla JS UI for interactive exploration",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TerryZhang175/ECD.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/TerryZhang175/ECD/issues"
+  },
+  "homepage": "https://github.com/TerryZhang175/ECD#readme",
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
+}

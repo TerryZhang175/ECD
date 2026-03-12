@@ -5,9 +5,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ECD Analyzer UI</title>
-  <link rel="stylesheet" href="styles.css?v=20260125-6" />
+  <link rel="stylesheet" href="styles.css?v=20260313-1" />
   <script defer src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-  <script defer src="app.js?v=20260125-17"></script>
+  <script defer src="app.js?v=20260313-1"></script>
 </head>
 
 <body>
@@ -368,8 +368,8 @@
         </section>
       </aside>
 
-      <section class="visuals">
-        <section class="panel plot-panel" style="--delay: 120ms;">
+      <section class="visuals" id="visualsStack">
+        <section class="panel plot-panel" data-panel-id="spectrum" data-reorderable-panel style="--delay: 120ms;">
           <div class="panel-header">
             <div class="panel-title">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -389,7 +389,7 @@
           </div>
         </section>
 
-        <section class="panel plot-panel" style="--delay: 200ms;">
+        <section class="panel plot-panel" data-panel-id="coverage" data-reorderable-panel style="--delay: 200ms;">
           <div class="panel-header">
             <div class="panel-title">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -400,6 +400,8 @@
               <h2>Fragment Coverage</h2>
             </div>
             <div class="panel-actions">
+              <button class="button ghost" type="button" data-swap-coverage-results
+                aria-label="Swap Fragment Coverage and Results Table">Swap</button>
               <button class="button ghost" id="coverageLoadButton" type="button">Load fragments CSV</button>
               <input id="coverageFile" type="file" accept=".csv" hidden />
               <span class="helper coverage-status" id="coverageStatus">Demo data</span>
@@ -412,7 +414,7 @@
           </div>
         </section>
 
-        <section class="panel results-panel" style="--delay: 280ms;">
+        <section class="panel results-panel" data-panel-id="results" data-reorderable-panel style="--delay: 280ms;">
           <div class="panel-header">
             <div class="panel-title">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -423,9 +425,25 @@
               <h2>Results Table</h2>
             </div>
             <div class="panel-actions">
+              <button class="button ghost" type="button" data-swap-coverage-results
+                aria-label="Swap Fragment Coverage and Results Table">Swap</button>
               <select class="table-sort" id="resultsView">
                 <option value="results">Results Table</option>
                 <option value="theoretical">Theoretical Table</option>
+              </select>
+              <select class="table-sort" id="theoreticalMode" hidden>
+                <option value="grouped">Grouped positions</option>
+                <option value="all">All ions</option>
+              </select>
+              <select class="table-sort" id="theoreticalIonFilter" hidden>
+                <option value="all">All ion types</option>
+                <option value="b">b ions</option>
+                <option value="c">c ions</option>
+                <option value="y">y ions</option>
+                <option value="z">z ions</option>
+              </select>
+              <select class="table-sort" id="theoreticalChargeFilter" hidden>
+                <option value="all">All charges</option>
               </select>
               <input class="table-filter" id="resultsFilter" type="search" placeholder="Filter fragments" />
               <select class="table-sort" id="resultsSort">

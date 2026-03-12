@@ -69,6 +69,15 @@ def _normalize_ion_type(value: Optional[str]) -> Optional[str]:
     return None
 
 
+def _normalize_theoretical_ion_type(value: Optional[str]) -> Optional[str]:
+    ion = (value or "").lower()
+    if ion == "c-dot":
+        return "c-dot"
+    if ion == "z-dot":
+        return "z-dot"
+    return _normalize_ion_type(ion)
+
+
 def _parse_disulfide_map(value: Optional[str]) -> list[tuple[int, int]]:
     if not value:
         return []
@@ -107,9 +116,10 @@ def _safe_float(value: Any) -> Optional[float]:
 def _fragment_index(seq_len: int, ion_type: str, frag_len: int) -> Optional[int]:
     if frag_len <= 0 or seq_len <= 1:
         return None
-    if ion_type in {"b", "c"}:
+    series = ion_series(str(ion_type or ""))
+    if series in {"b", "c"}:
         idx = frag_len - 1
-    elif ion_type in {"y", "z"}:
+    elif series in {"y", "z"}:
         idx = seq_len - frag_len - 1
     else:
         return None
@@ -172,18 +182,18 @@ def _build_full_theoretical_fragments(
 
     ion_types: list[str] = []
     for raw in (cfg.ION_TYPES or []):
-        ion = _normalize_ion_type(str(raw))
+        ion = _normalize_theoretical_ion_type(str(raw))
         if ion and ion not in ion_types:
             ion_types.append(ion)
     if not ion_types:
-        ion_types = ["b", "c", "y", "z"]
+        ion_types = ["b", "c", "y", "z-dot"]
 
     z_min = max(1, int(getattr(cfg, "FRAG_MIN_CHARGE", 1) or 1))
     z_max = max(z_min, int(getattr(cfg, "FRAG_MAX_CHARGE", z_min) or z_min))
     mode_norm = str(mode or "fragments").lower()
     include_losses = mode_norm != "complex_fragments"
 
-    ion_rank = {"b": 0, "c": 1, "y": 2, "z": 3}
+    ion_rank = {"b": 0, "c": 1, "c-dot": 1, "y": 2, "z": 3, "z-dot": 3}
     seen: set[tuple[Any, ...]] = set()
     rows: list[dict[str, Any]] = []
 
@@ -381,7 +391,9 @@ def get_config() -> dict[str, Any]:
         "enable_isodec_rules": bool(cfg.ENABLE_ISODEC_RULES),
         "enable_h_transfer": bool(cfg.ENABLE_H_TRANSFER),
         "enable_neutral_losses": bool(cfg.ENABLE_NEUTRAL_LOSSES),
-        "precursor_calibration": bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)),
+        "precursor_calibration": bool(
+            getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False) and getattr(cfg, "ENABLE_LOCK_MASS", False)
+        ),
         "enable_centroid": bool(getattr(cfg, "ENABLE_CENTROID", False)),
     }
 
@@ -401,6 +413,48 @@ def _append_isodec_overrides(overrides: list[_CfgOverride], req: Any) -> None:
         overrides.append(_CfgOverride("ISODEC_PLUSONE_INT_WINDOW_UB", float(req.isodec_plusone_int_window_ub)))
     if getattr(req, "isodec_minusone_as_zero", None) is not None:
         overrides.append(_CfgOverride("ISODEC_MINUSONE_AS_ZERO", bool(req.isodec_minusone_as_zero)))
+
+
+def _append_precursor_runtime_overrides(
+    overrides: list[_CfgOverride],
+    req: FragmentsRunRequest,
+    *,
+    include_chain_to_fragments: bool,
+) -> None:
+    if req.enable_h_transfer is not None:
+        overrides.append(_CfgOverride("ENABLE_H_TRANSFER", bool(req.enable_h_transfer)))
+    if req.enable_centroid is not None:
+        overrides.append(_CfgOverride("ENABLE_CENTROID", bool(req.enable_centroid)))
+    if req.precursor_calibration is not None:
+        enabled = bool(req.precursor_calibration)
+        overrides.append(_CfgOverride("ENABLE_LOCK_MASS", enabled))
+        if include_chain_to_fragments:
+            overrides.append(_CfgOverride("PRECURSOR_CHAIN_TO_FRAGMENTS", enabled))
+
+
+def _build_precursor_summary(result: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not result:
+        return None
+    return {
+        "match_found": bool(result.get("match_found")),
+        "search_status": result.get("search_status"),
+        "best_charge": result.get("best_z"),
+        "best_state": result.get("best_state"),
+        "best_css": _safe_float(result.get("best_css")),
+        "best_score": _safe_float(result.get("best_composite_score")),
+        "best_coverage": _safe_float(result.get("best_coverage")),
+        "best_ppm_rmse": _safe_float(result.get("best_ppm_rmse")),
+        "shift_ppm": _safe_float(result.get("shift_ppm")),
+        "best_obs_mz": _safe_float(result.get("best_obs_mz")),
+        "best_theory_mz": _safe_float(result.get("best_theory_mz")),
+        "precursor_tol_ppm": _safe_float(result.get("precursor_tol_ppm")),
+        "calibration_requested": bool(result.get("calibration_requested", False)),
+        "calibration_applied": bool(result.get("calibration_applied", False)),
+        "calibration_safe": bool(result.get("calibration_safe", False)),
+        "calibration_block_reasons": list(result.get("calibration_block_reasons") or []),
+        "search_window": result.get("search_window"),
+        "ambiguous_window": result.get("ambiguous_window"),
+    }
 
 
 def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "fragments") -> list[_CfgOverride]:
@@ -437,14 +491,9 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
-    if req.enable_h_transfer is not None:
-        overrides.append(_CfgOverride("ENABLE_H_TRANSFER", bool(req.enable_h_transfer)))
     if req.enable_neutral_losses is not None:
         overrides.append(_CfgOverride("ENABLE_NEUTRAL_LOSSES", bool(req.enable_neutral_losses)))
-    if req.precursor_calibration is not None:
-        overrides.append(_CfgOverride("PRECURSOR_CHAIN_TO_FRAGMENTS", bool(req.precursor_calibration)))
-    if req.enable_centroid is not None:
-        overrides.append(_CfgOverride("ENABLE_CENTROID", bool(req.enable_centroid)))
+    _append_precursor_runtime_overrides(overrides, req, include_chain_to_fragments=True)
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     _append_isodec_overrides(overrides, req)
@@ -488,6 +537,7 @@ def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    _append_precursor_runtime_overrides(overrides, req, include_chain_to_fragments=False)
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     _append_isodec_overrides(overrides, req)
@@ -526,6 +576,7 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
+    _append_precursor_runtime_overrides(overrides, req, include_chain_to_fragments=True)
     if req.anchor_mode is not None:
         overrides.append(_CfgOverride("ANCHOR_MODE", str(req.anchor_mode)))
     _append_isodec_overrides(overrides, req)
@@ -577,7 +628,12 @@ def _run_fragments_impl(
             spectrum = preprocess_spectrum(spectrum)
             if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
                 # Calibrate via precursor search without plotting.
-                precursor_result = run_precursor_headless(residues, spectrum, isodec_config)
+                precursor_result = run_precursor_headless(
+                    residues,
+                    spectrum,
+                    isodec_config,
+                    apply_calibration=True,
+                )
                 spectrum = np.asarray(precursor_result.get("spectrum"), dtype=float)
             result = run_fragments_headless(residues, spectrum, isodec_config)
     except FileNotFoundError as exc:
@@ -625,20 +681,7 @@ def _run_fragments_impl(
         )
 
     fragments = [f for f in fragments if f["ion_type"] and f["fragment_index"] is not None]
-    precursor_summary = None
-    if precursor_result:
-        precursor_summary = {
-            "match_found": bool(precursor_result.get("match_found")),
-            "best_charge": precursor_result.get("best_z"),
-            "best_state": precursor_result.get("best_state"),
-            "best_css": _safe_float(precursor_result.get("best_css")),
-            "best_score": _safe_float(precursor_result.get("best_composite_score")),
-            "best_coverage": _safe_float(precursor_result.get("best_coverage")),
-            "best_ppm_rmse": _safe_float(precursor_result.get("best_ppm_rmse")),
-            "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
-            "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
-            "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
-        }
+    precursor_summary = _build_precursor_summary(precursor_result)
     return {
         "mode": plot_mode,
         "sequence": sequence,
@@ -681,7 +724,12 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
             theoretical_fragments = _build_full_theoretical_fragments(residues, mode="fragments")
             spectrum = load_spectrum(cfg.filepath, cfg.SCAN, prefer_centroid=bool(cfg.ENABLE_CENTROID))
             spectrum = preprocess_spectrum(spectrum)
-            result = run_precursor_headless(residues, spectrum, isodec_config)
+            result = run_precursor_headless(
+                residues,
+                spectrum,
+                isodec_config,
+                apply_calibration=bool(getattr(cfg, "ENABLE_LOCK_MASS", False)),
+            )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -719,6 +767,31 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
             }
         )
 
+    ambiguous_candidates: list[dict[str, Any]] = []
+    for cand in result.get("ambiguous_candidates", []) or []:
+        cand_theory_mz, cand_theory_int = _theory_from_dist(cand.get("dist"))
+        ambiguous_candidates.append(
+            {
+                "charge": int(cand.get("charge", 0) or 0),
+                "state": cand.get("state"),
+                "obs_mz": _safe_float(cand.get("obs_mz")),
+                "anchor_theory_mz": _safe_float(cand.get("anchor_theory_mz")),
+                "ppm": _safe_float(cand.get("ppm")),
+                "css": _safe_float(cand.get("css")),
+                "composite_score": _safe_float(cand.get("composite_score", cand.get("score"))),
+                "coverage": _safe_float(cand.get("coverage")),
+                "ppm_rmse": _safe_float(cand.get("ppm_rmse")),
+                "ppm_consistency": _safe_float(cand.get("ppm_consistency")),
+                "spacing_consistency": _safe_float(cand.get("spacing_consistency")),
+                "match_count": int(cand.get("match_count", 0) or 0),
+                "accepted": bool(cand.get("accepted", False)),
+                "iteration": int(cand.get("iteration", 0) or 0),
+                "theory_mz": cand_theory_mz,
+                "theory_intensity": cand_theory_int,
+                "color": "#f59e0b",
+            }
+        )
+
     window_raw = result.get("plot_window")
     plot_window = None
     if isinstance(window_raw, (list, tuple)) and len(window_raw) == 2:
@@ -727,18 +800,7 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         if w_min is not None and w_max is not None and w_min < w_max:
             plot_window = {"min": w_min, "max": w_max}
 
-    precursor_summary = {
-        "match_found": bool(result.get("match_found")),
-        "best_charge": result.get("best_z"),
-        "best_state": result.get("best_state"),
-        "best_css": _safe_float(result.get("best_css")),
-        "best_score": _safe_float(result.get("best_composite_score")),
-        "best_coverage": _safe_float(result.get("best_coverage")),
-        "best_ppm_rmse": _safe_float(result.get("best_ppm_rmse")),
-        "shift_ppm": _safe_float(result.get("shift_ppm")),
-        "best_obs_mz": _safe_float(result.get("best_obs_mz")),
-        "best_theory_mz": _safe_float(result.get("best_theory_mz")),
-    }
+    precursor_summary = _build_precursor_summary(result) or {}
 
     logger.info(
         "run precursor complete: match=%s best_z=%s css=%s shift_ppm=%s",
@@ -755,6 +817,7 @@ def _run_precursor_impl(req: FragmentsRunRequest, filepath_override: Optional[st
         "scan": req.scan,
         "precursor": precursor_summary,
         "candidates": candidates,
+        "ambiguous_candidates": ambiguous_candidates,
         "count": len(candidates),
         "theoretical_fragments": theoretical_fragments,
         "plot_window": plot_window,
@@ -793,7 +856,12 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             spectrum = preprocess_spectrum(spectrum)
             if bool(getattr(cfg, "PRECURSOR_CHAIN_TO_FRAGMENTS", False)):
                 # Calibrate via precursor search without plotting.
-                precursor_result = run_precursor_headless(residues, spectrum, isodec_config)
+                precursor_result = run_precursor_headless(
+                    residues,
+                    spectrum,
+                    isodec_config,
+                    apply_calibration=True,
+                )
                 spectrum = np.asarray(precursor_result.get("spectrum"), dtype=float)
             result = run_charge_reduced_headless(residues, spectrum, isodec_config)
     except FileNotFoundError as exc:
@@ -806,12 +874,13 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
     spectrum_mz = np.asarray(result.get("spectrum_mz", []), dtype=float)
     spectrum_int = np.asarray(result.get("spectrum_int", []), dtype=float)
     spectrum_mz_ds, spectrum_int_ds = _downsample_xy(spectrum_mz, spectrum_int)
-    matches = result.get("matches", []) or []
-    theory_mz, theory_int = _extract_theory_peaks(matches)
+    accepted_matches = result.get("accepted_matches", []) or result.get("matches", []) or []
+    ambiguous_matches = result.get("ambiguous_matches", []) or []
+    shadowed_matches = result.get("shadowed_matches", []) or []
+    overlays_source = accepted_matches if accepted_matches else ambiguous_matches
+    theory_mz, theory_int = _extract_theory_peaks(overlays_source)
 
-    overlays: list[dict[str, Any]] = []
-    candidates: list[dict[str, Any]] = []
-    for m in matches:
+    def _serialize_charge_reduced_candidate(m: dict[str, Any], fallback_color: str) -> dict[str, Any]:
         dist = m.get("dist")
         dist_full = m.get("dist_full")
         if isinstance(dist, np.ndarray) and dist.size:
@@ -819,7 +888,7 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             int_vals = dist[:, 1].astype(float).tolist()
         else:
             mz_vals, int_vals = [], []
-        color_norm = _normalize_color(m.get("color"))
+        color_norm = _normalize_color(m.get("color") or fallback_color)
         anchor_mz = None
         ppm = None
         if isinstance(dist_full, np.ndarray) and dist_full.size:
@@ -828,52 +897,50 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
             obs_mz = _safe_float(m.get("obs_mz"))
             if obs_mz is not None and anchor_mz:
                 ppm = ((obs_mz - anchor_mz) / anchor_mz) * 1e6
-        overlays.append(
-            {
-                "label": m.get("label", ""),
-                "mz": mz_vals,
-                "intensity": int_vals,
-                "color": color_norm,
-                "charge": int(m.get("z", 0) or 0),
-                "state": m.get("state", ""),
-                "target": m.get("target", ""),
-                "obs_mz": _safe_float(m.get("obs_mz")),
-                "css": _safe_float(m.get("css")),
-            }
-        )
-        candidates.append(
-            {
-                "label": m.get("label", ""),
-                "charge": int(m.get("z", 0) or 0),
-                "state": m.get("state", ""),
-                "target": m.get("target", ""),
-                "obs_mz": _safe_float(m.get("obs_mz")),
-                "obs_int": _safe_float(m.get("obs_int")),
-                "anchor_theory_mz": anchor_mz,
-                "ppm": _safe_float(ppm),
-                "css": _safe_float(m.get("css")),
-                "theory_mz": mz_vals,
-                "theory_intensity": int_vals,
-                "color": color_norm,
-            }
-        )
+        return {
+            "label": m.get("label", ""),
+            "charge": int(m.get("z", 0) or 0),
+            "state": m.get("state", ""),
+            "target": m.get("target", ""),
+            "status": m.get("status", "accepted"),
+            "shadowed_by": m.get("shadowed_by"),
+            "obs_mz": _safe_float(m.get("obs_mz")),
+            "obs_int": _safe_float(m.get("obs_int")),
+            "anchor_theory_mz": _safe_float(m.get("anchor_theory_mz", anchor_mz)),
+            "ppm": _safe_float(m.get("anchor_ppm", ppm)),
+            "css": _safe_float(m.get("css")),
+            "score": _safe_float(m.get("score", m.get("css"))),
+            "coverage": _safe_float(m.get("coverage")),
+            "ppm_rmse": _safe_float(m.get("ppm_rmse")),
+            "match_count": int(m.get("match_count", 0) or 0),
+            "strategy": m.get("strategy"),
+            "theory_mz": mz_vals,
+            "theory_intensity": int_vals,
+            "color": color_norm,
+        }
+
+    def _overlay_from_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "label": candidate.get("label", ""),
+            "mz": list(candidate.get("theory_mz", []) or []),
+            "intensity": list(candidate.get("theory_intensity", []) or []),
+            "color": candidate.get("color"),
+            "charge": int(candidate.get("charge", 0) or 0),
+            "state": candidate.get("state", ""),
+            "target": candidate.get("target", ""),
+            "obs_mz": _safe_float(candidate.get("obs_mz")),
+            "css": _safe_float(candidate.get("css")),
+            "status": candidate.get("status", "accepted"),
+        }
+
+    candidates = [_serialize_charge_reduced_candidate(m, "#0f172a") for m in accepted_matches]
+    ambiguous_candidates = [_serialize_charge_reduced_candidate(m, "#f59e0b") for m in ambiguous_matches]
+    shadowed_candidates = [_serialize_charge_reduced_candidate(m, "#94a3b8") for m in shadowed_matches]
+    overlays = [_overlay_from_candidate(candidate) for candidate in (candidates if candidates else ambiguous_candidates)]
 
     logger.info("run charge_reduced complete: count=%s", len(candidates))
 
-    precursor_summary = None
-    if precursor_result:
-        precursor_summary = {
-            "match_found": bool(precursor_result.get("match_found")),
-            "best_charge": precursor_result.get("best_z"),
-            "best_state": precursor_result.get("best_state"),
-            "best_css": _safe_float(precursor_result.get("best_css")),
-            "best_score": _safe_float(precursor_result.get("best_composite_score")),
-            "best_coverage": _safe_float(precursor_result.get("best_coverage")),
-            "best_ppm_rmse": _safe_float(precursor_result.get("best_ppm_rmse")),
-            "shift_ppm": _safe_float(precursor_result.get("shift_ppm")),
-            "best_obs_mz": _safe_float(precursor_result.get("best_obs_mz")),
-            "best_theory_mz": _safe_float(precursor_result.get("best_theory_mz")),
-        }
+    precursor_summary = _build_precursor_summary(precursor_result)
 
     return {
         "mode": "charge_reduced",
@@ -881,7 +948,11 @@ def _run_charge_reduced_impl(req: FragmentsRunRequest, filepath_override: Option
         "sequence_raw": sequence_raw,
         "scan": req.scan,
         "candidates": candidates,
+        "ambiguous_candidates": ambiguous_candidates,
+        "shadowed_candidates": shadowed_candidates,
         "count": len(candidates),
+        "search_status": result.get("search_status"),
+        "search_window": result.get("search_window"),
         "theoretical_fragments": theoretical_fragments,
         "overlays": overlays,
         "precursor": precursor_summary,

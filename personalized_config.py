@@ -27,7 +27,7 @@ except Exception:
         isodec_make_shifted_peak = None
 
 
-filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/ZD_21to22Feb_2n5_WTECD/RE 30.txt'
+filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/ZD_21to22Feb_2n5_WTECD/RE 12.txt'
 # What to generate/plot:
 # - "precursor": precursor charge/state inspection and lock-mass calibration
 # - "charge_reduced": charge-reduced precursor search (ECD/ETD)
@@ -35,7 +35,7 @@ filepath = '/Users/terry/Downloads/Mannually checked ECD_29_July_ZD/ZD_21to22Feb
 # - "complex_fragments": monomer + fragment non-covalent complexes
 # - "diagnose": detailed diagnostics for a specific fragment ion
 # - "raw": plot raw spectrum only (no preprocessing)
-PLOT_MODE = "precursor"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
+PLOT_MODE = "diagnose"  # options: "precursor", "charge_reduced", "fragments", "complex_fragments", "diagnose", "raw"
 SCAN = 1
 ENABLE_CENTROID = True  # Global toggle for centroid usage (import + local re-centroiding).
 
@@ -120,7 +120,7 @@ FRAGMENT_INTENSITY_CAP_VERBOSE = True
 #   DIAGNOSE_ION_SPEC = "c7^2+"
 #   DIAGNOSE_ION_SPEC = "z12-2H2O^3+"
 #   DIAGNOSE_ION_SPEC = "z-dot12-CO"  # will scan charge range if no ^z+ suffix is present
-DIAGNOSE_ION_SPEC = "z5^1+"
+DIAGNOSE_ION_SPEC = "b5^1+"
 # Hydrogen transfer degree (H+). Use an integer in {-2,-1,0,1,2}.
 # Set to 0 to enable automatic selection using fragments mode's mixture model
 DIAGNOSE_H_TRANSFER = 0
@@ -148,7 +148,7 @@ CHARGE_REDUCED_CSV_PEAKS_PATH = None
 ENABLE_ISODEC_RULES = True
 ISODEC_MINPEAKS = 2
 ISODEC_CSS_THRESH = 0.70
-ISODEC_MIN_AREA_COVERED = 0.20
+ISODEC_MIN_AREA_COVERED = 0.1
 ISODEC_MZ_WINDOW_LB = -1.05
 ISODEC_MZ_WINDOW_UB = 4.05
 ISODEC_PLUSONE_INT_WINDOW_LB = 0.10
@@ -156,6 +156,13 @@ ISODEC_PLUSONE_INT_WINDOW_UB = 0.60
 ISODEC_MINUSONE_AS_ZERO = True
 ISODEC_VERBOSE = False
 ISODEC_USE_AREA_COVERED = True
+
+# Diagnose-only override: allow high-confidence matches to pass even if strict IsoDec acceptance fails.
+DIAGNOSE_ISODEC_OVERRIDE_ENABLE = True
+DIAGNOSE_ISODEC_OVERRIDE_MIN_CSS = 0.95
+DIAGNOSE_ISODEC_OVERRIDE_MIN_MATCHED_PEAKS = 2
+# If None, falls back to MATCH_TOL_PPM.
+DIAGNOSE_ISODEC_OVERRIDE_MAX_ABS_PPM = None
 
 ISOLEN = 128
 ADDUCT_MASS = 1.007276467  # proton mass for positive-mode m/z conversion
@@ -191,6 +198,10 @@ PRECURSOR_SCORE_W_COVERAGE = 0.25
 PRECURSOR_SCORE_W_PPM = 0.20
 PRECURSOR_SCORE_W_SPACING = 0.10
 PRECURSOR_SCORE_W_INTENSITY = 0.25
+PRECURSOR_CALIBRATION_MIN_SCORE = 0.70
+PRECURSOR_CALIBRATION_MIN_COVERAGE = PRECURSOR_MIN_COVERAGE
+PRECURSOR_CALIBRATION_MAX_PPM_RMSE = PRECURSOR_MAX_RESIDUAL_RMSE_PPM
+PRECURSOR_CALIBRATION_MAX_SHIFT_PPM = 100.0
 ENABLE_LOCK_MASS = True
 # Enable precursor lock-mass calibration before fragments/complex_fragments/charge_reduced modes.
 # When True, the spectrum is first searched for the precursor ion, and if found, all m/z values
@@ -200,6 +211,21 @@ PRECURSOR_CHAIN_TO_FRAGMENTS = True
 # Charge-reduced precursor settings.
 CR_MIN_CHARGE = 1
 CR_MAX_CHARGE = 10
+CR_ANCHOR_SEARCH_DA = 2.0
+CR_LOCAL_WINDOW_DA = 3.0
+CR_MIN_MATCHED_PEAKS = 2
+CR_MIN_COVERAGE = 0.30
+CR_MAX_ANCHOR_ABS_PPM = None  # None => auto from MATCH_TOL_PPM
+CR_MAX_RESIDUAL_RMSE_PPM = None  # None => auto from MATCH_TOL_PPM
+CR_PPM_SIGMA = None  # None => auto from MATCH_TOL_PPM
+CR_SPACING_SIGMA_DA = None  # None => auto from anchor m/z and MATCH_TOL_PPM
+CR_ENABLE_AMBIGUITY_GUARD = True
+CR_AMBIGUITY_MARGIN = 0.03
+CR_SCORE_W_CSS = 0.45
+CR_SCORE_W_COVERAGE = 0.25
+CR_SCORE_W_PPM = 0.20
+CR_SCORE_W_SPACING = 0.10
+CR_SCORE_W_INTENSITY = 0.25
 
 
 def require_isodec_rules() -> None:

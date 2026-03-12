@@ -658,7 +658,7 @@ def diagnose_candidate(
             )
             continue
 
-        # Save theory m/z from dist0 early (before H-transfer processing)
+        # Save neutral theory m/z early for diagnostics; explicit H-transfer may shift it later.
         dist0_theory_mz = float(dist0[get_anchor_idx(dist0), 0])
         variant_result["expected_theory_mz"] = dist0_theory_mz
 
@@ -667,26 +667,15 @@ def diagnose_candidate(
         best_weights = None
         best_model = "neutral"
         best_score = 0.0
-        neutral_score = 0.0
 
-        # Always use mixture model (same as fragments mode)
-        # h_transfer parameter only affects final reporting, not the matching algorithm
-        if h_transfer != 0:
-            variant_result["diagnostic_steps"].append(
-                {
-                    "step": "4. H-transfer mode",
-                    "status": "info",
-                    "details": f"Requested H-transfer: {h_transfer:+d} H+ (using mixture model for matching)",
-                }
-            )
-        else:
-            variant_result["diagnostic_steps"].append(
-                {
-                    "step": "4. H-transfer mixture model",
-                    "status": "info",
-                    "details": "Applying fragments mode mixture model",
-                }
-            )
+        # Diagnose mode should evaluate the explicitly requested H-transfer state, not auto-mix.
+        variant_result["diagnostic_steps"].append(
+            {
+                "step": "4. H-transfer mode",
+                "status": "info",
+                "details": f"Requested H-transfer: {int(h_transfer):+d} H+",
+            }
+        )
 
         shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
         shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
@@ -704,22 +693,25 @@ def diagnose_candidate(
             dist_m2 = dist0.copy()
             dist_m2[:, 0] -= shift_2
 
-        dists_for_union = [dist0]
+        model_dists = {"neutral": dist0}
         if allow_1h:
-            dists_for_union.extend([dist_p1, dist_m1])
+            model_dists["+H"] = dist_p1
+            model_dists["-H"] = dist_m1
         if allow_2h:
-            dists_for_union.extend([dist_p2, dist_m2])
+            model_dists["+2H"] = dist_p2
+            model_dists["-2H"] = dist_m2
 
-        sample_keys, sample_mzs, scale = build_sample_axis(
-            dists_for_union,
-            decimals=6,
-            mz_min=mz_min,
-            mz_max=mz_max,
-        )
-
-        if len(sample_mzs) == 0:
-            variant_result["reason"] = "sample_axis_empty"
-            variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
+        requested_model = {
+            -2: "-2H",
+            -1: "-H",
+            0: "neutral",
+            1: "+H",
+            2: "+2H",
+        }[int(h_transfer)]
+        requested_dist = model_dists.get(requested_model)
+        if requested_dist is None:
+            variant_result["reason"] = "requested_h_transfer_not_supported"
+            variant_result["anchor_theory_mz"] = dist0_theory_mz
             fallback_dist = _scaled_dist_for_display(dist0[:, 0], dist0[:, 1], dist0_theory_mz)
             variant_result["dist_plot"] = fallback_dist
             variant_result["theory_matches"] = match_theory_peaks(
@@ -730,12 +722,46 @@ def diagnose_candidate(
                 tol_ppm=float(match_tol_ppm),
             )
             variant_result["diagnostic_steps"].append(
-                {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty sample axis"}
+                {
+                    "step": "4. H-transfer mode",
+                    "status": "fail",
+                    "details": f"Requested state {requested_model} is not enabled for ion series {series}",
+                }
             )
             variant_results.append(variant_result)
             continue
 
-        peak_mz = float(dist0[get_anchor_idx(dist0), 0])
+        requested_anchor_theory_mz = float(requested_dist[get_anchor_idx(requested_dist), 0])
+        variant_result["expected_theory_mz"] = requested_anchor_theory_mz
+
+        sample_keys, sample_mzs, scale = build_sample_axis(
+            [requested_dist],
+            decimals=6,
+            mz_min=mz_min,
+            mz_max=mz_max,
+        )
+
+        if len(sample_mzs) == 0:
+            variant_result["reason"] = "sample_axis_empty"
+            variant_result["anchor_theory_mz"] = requested_anchor_theory_mz
+            fallback_dist = _scaled_dist_for_display(
+                requested_dist[:, 0], requested_dist[:, 1], requested_anchor_theory_mz
+            )
+            variant_result["dist_plot"] = fallback_dist
+            variant_result["theory_matches"] = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                fallback_dist[:, 0],
+                theory_int=fallback_dist[:, 1],
+                tol_ppm=float(match_tol_ppm),
+            )
+            variant_result["diagnostic_steps"].append(
+                {"step": "4. H-transfer mode", "status": "fail", "details": "Empty sample axis"}
+            )
+            variant_results.append(variant_result)
+            continue
+
+        peak_mz = requested_anchor_theory_mz
         y_obs = observed_intensities_isodec(
             spectrum_mz,
             spectrum_int,
@@ -745,93 +771,42 @@ def diagnose_candidate(
             peak_mz=peak_mz,
         )
 
-        y0 = vectorize_dist(dist0, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
-        neutral_score_union = css_similarity(y_obs, y0)
-        neutral_score = neutral_score_union
+        y_requested = vectorize_dist(requested_dist, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
+        requested_score_union = css_similarity(y_obs, y_requested)
+        requested_score = requested_score_union
 
-        dist0_neutral = dist0
+        requested_dist_windowed = requested_dist
         if mz_min is not None or mz_max is not None:
             mz_min_f = -np.inf if mz_min is None else float(mz_min)
             mz_max_f = np.inf if mz_max is None else float(mz_max)
-            dist0_neutral = dist0[(dist0[:, 0] >= mz_min_f) & (dist0[:, 0] <= mz_max_f)]
-        if dist0_neutral.size:
-            y_obs_neutral = observed_intensities_isodec(
+            requested_dist_windowed = requested_dist[
+                (requested_dist[:, 0] >= mz_min_f) & (requested_dist[:, 0] <= mz_max_f)
+            ]
+        if requested_dist_windowed.size:
+            y_obs_windowed = observed_intensities_isodec(
                 spectrum_mz,
                 spectrum_int,
-                dist0_neutral[:, 0],
+                requested_dist_windowed[:, 0],
                 z=int(z),
                 match_tol_ppm=float(match_tol_ppm),
                 peak_mz=peak_mz,
             )
-            neutral_score = css_similarity(y_obs_neutral, dist0_neutral[:, 1])
+            requested_score = css_similarity(y_obs_windowed, requested_dist_windowed[:, 1])
 
-        best_model = "neutral"
-        best_score = neutral_score_union
-        best_pred = y0
-        best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
-
-        if allow_1h or allow_2h:
-            yp1 = vectorize_dist(dist_p1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
-            ym1 = vectorize_dist(dist_m1, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_1h else None
-            yp2 = vectorize_dist(dist_p2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
-            ym2 = vectorize_dist(dist_m2, sample_keys, scale, mz_min=mz_min, mz_max=mz_max) if allow_2h else None
-
-            comps_plus = [("0", y0)]
-            comps_minus = [("0", y0)]
-            if allow_1h:
-                comps_plus.append(("+H", yp1))
-                comps_minus.append(("-H", ym1))
-            if allow_2h:
-                comps_plus.append(("+2H", yp2))
-                comps_minus.append(("-2H", ym2))
-
-            names_plus, vecs_plus = zip(*comps_plus)
-            w_plus, y_plus, score_plus = fit_simplex_mixture(y_obs, list(vecs_plus))
-            weights_plus = dict(zip(names_plus, w_plus))
-
-            names_minus, vecs_minus = zip(*comps_minus)
-            w_minus, y_minus, score_minus = fit_simplex_mixture(y_obs, list(vecs_minus))
-            weights_minus = dict(zip(names_minus, w_minus))
-
-            if score_plus > best_score:
-                best_model = "+mix"
-                best_score = score_plus
-                best_pred = y_plus
-                best_weights = {
-                    "0": weights_plus.get("0", 0.0),
-                    "+H": weights_plus.get("+H", 0.0),
-                    "+2H": weights_plus.get("+2H", 0.0),
-                    "-H": 0.0,
-                    "-2H": 0.0,
-                }
-
-            if score_minus > best_score:
-                best_model = "-mix"
-                best_score = score_minus
-                best_pred = y_minus
-                best_weights = {
-                    "0": weights_minus.get("0", 0.0),
-                    "+H": 0.0,
-                    "+2H": 0.0,
-                    "-H": weights_minus.get("-H", 0.0),
-                    "-2H": weights_minus.get("-2H", 0.0),
-                }
-
-        rel_improve = (best_score - neutral_score_union) / max(neutral_score_union, 1e-12)
-        if best_model != "neutral" and rel_improve < float(cfg.H_TRANSFER_MIN_REL_IMPROVEMENT):
-            best_model = "neutral"
-            best_score = neutral_score_union
-            best_pred = y0
-            best_weights = {"0": 1.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
-
-        if best_model == "neutral":
-            best_score = neutral_score
+        best_model = requested_model
+        best_score = requested_score
+        best_pred = y_requested
+        best_weights = {"0": 0.0, "+H": 0.0, "+2H": 0.0, "-H": 0.0, "-2H": 0.0}
+        if requested_model == "neutral":
+            best_weights["0"] = 1.0
+        else:
+            best_weights[requested_model] = 1.0
 
         if sample_mzs is None or best_pred is None or float(np.max(best_pred)) <= 0.0:
             variant_result["reason"] = "theory_empty"
-            variant_result["anchor_theory_mz"] = dist0_theory_mz  # Still provide theory m/z
+            variant_result["anchor_theory_mz"] = requested_anchor_theory_mz
             variant_result["diagnostic_steps"].append(
-                {"step": "4. H-transfer mixture model", "status": "fail", "details": "Empty theoretical prediction"}
+                {"step": "4. H-transfer mode", "status": "fail", "details": "Empty theoretical prediction"}
             )
             variant_results.append(variant_result)
             continue
@@ -839,30 +814,13 @@ def diagnose_candidate(
         variant_result["raw_cosine_preanchor"] = float(best_score)
         variant_result["diagnostic_steps"].append(
             {
-                "step": "4. H-transfer mixture model",
+                "step": "4. H-transfer mode",
                 "status": "pass",
                 "details": f"Selected model: {best_model}, CSS: {best_score:.4f}",
             }
         )
 
-        if best_model == "neutral":
-            variant_result["h_transfer"] = 0
-        elif best_model == "+mix":
-            if best_weights["+2H"] > best_weights["+H"]:
-                variant_result["h_transfer"] = 2
-            elif best_weights["+H"] > 0:
-                variant_result["h_transfer"] = 1
-            else:
-                variant_result["h_transfer"] = 0
-        elif best_model == "-mix":
-            if best_weights["-2H"] > best_weights["-H"]:
-                variant_result["h_transfer"] = -2
-            elif best_weights["-H"] > 0:
-                variant_result["h_transfer"] = -1
-            else:
-                variant_result["h_transfer"] = 0
-        else:
-            variant_result["h_transfer"] = int(h_transfer)
+        variant_result["h_transfer"] = int(h_transfer)
 
         mono_mass = float(loss_comp.mass())
         avg_mass = float(loss_comp.mass(average=True))
@@ -1084,17 +1042,46 @@ def diagnose_candidate(
                 }
 
             if not accepted:
-                variant_result["reason"] = "failed_isodec_rules"
-                variant_result["dist_plot"] = dist_plot
-                variant_result["theory_matches"] = match_theory_peaks(
-                    spectrum_mz,
-                    spectrum_int,
-                    dist_plot[:, 0],
-                    theory_int=dist_plot[:, 1],
-                    tol_ppm=float(match_tol_ppm),
-                )
-                variant_results.append(variant_result)
-                continue
+                # Diagnose-only high-confidence override for borderline strict-rule failures.
+                override_enabled = bool(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_ENABLE", False))
+                override_min_css = float(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_CSS", 0.95))
+                override_min_matched = int(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_MATCHED_PEAKS", 2))
+                override_max_abs_ppm_cfg = getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MAX_ABS_PPM", None)
+                if override_max_abs_ppm_cfg is None:
+                    override_max_abs_ppm = float(match_tol_ppm)
+                else:
+                    override_max_abs_ppm = float(override_max_abs_ppm_cfg)
+                matched_n = int(variant_result.get("isodec_detail", {}).get("matched_peaks_n", 0))
+                anchor_ppm_abs = abs(float(variant_result.get("anchor_ppm", 0.0) or 0.0))
+                if (
+                    override_enabled
+                    and float(isodec_css) >= override_min_css
+                    and matched_n >= override_min_matched
+                    and anchor_ppm_abs <= override_max_abs_ppm
+                ):
+                    accepted = True
+                    variant_result["diagnostic_steps"].append(
+                        {
+                            "step": "7b. Diagnose override",
+                            "status": "pass",
+                            "details": (
+                                f"Override accepted: CSS={isodec_css:.4f}, "
+                                f"matched={matched_n}, |ppm|={anchor_ppm_abs:.2f}"
+                            ),
+                        }
+                    )
+                else:
+                    variant_result["reason"] = "failed_isodec_rules"
+                    variant_result["dist_plot"] = dist_plot
+                    variant_result["theory_matches"] = match_theory_peaks(
+                        spectrum_mz,
+                        spectrum_int,
+                        dist_plot[:, 0],
+                        theory_int=dist_plot[:, 1],
+                        tol_ppm=float(match_tol_ppm),
+                    )
+                    variant_results.append(variant_result)
+                    continue
 
             if shifted_peak is not None:
                 old_obs_mz = obs_mz
@@ -1136,7 +1123,10 @@ def diagnose_candidate(
 
         if final_score >= float(cfg.MIN_COSINE):
             variant_result["ok"] = True
-            variant_result["reason"] = "ok"
+            if variant_result.get("reason") in ("failed_isodec_rules", ""):
+                variant_result["reason"] = "ok"
+            if any(step.get("step") == "7b. Diagnose override" for step in variant_result.get("diagnostic_steps", [])):
+                variant_result["reason"] = "ok_diagnose_override"
             variant_result["diagnostic_steps"].append(
                 {"step": "9. Match acceptance", "status": "pass", "details": f"Match accepted with CSS score: {final_score:.4f}"}
             )

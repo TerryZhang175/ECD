@@ -49,8 +49,13 @@ const diagnoseHTransferSelect = document.getElementById('diagnoseHTransfer');
 const resultsFilter = document.getElementById('resultsFilter');
 const resultsSort = document.getElementById('resultsSort');
 const resultsView = document.getElementById('resultsView');
+const theoreticalMode = document.getElementById('theoreticalMode');
+const theoreticalIonFilter = document.getElementById('theoreticalIonFilter');
+const theoreticalChargeFilter = document.getElementById('theoreticalChargeFilter');
 const resultsTable = document.getElementById('resultsTable');
 const ionTypeChips = Array.from(document.querySelectorAll('.chip-group .chip'));
+const visualsStack = document.getElementById('visualsStack');
+const swapCoverageResultsButtons = Array.from(document.querySelectorAll('[data-swap-coverage-results]'));
 
 const sessionStart = Date.now();
 let runStart = null;
@@ -59,6 +64,7 @@ let progress = 0;
 let isRunning = false;
 let coverageRows = null;
 let theoreticalRows = [];
+let theoreticalDisplayRows = [];
 let activeTableView = 'results';
 let tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
 let manualFilePathOverride = false;
@@ -69,6 +75,9 @@ let activeResultRow = null;
 let lastPrecursorWindow = null;
 let lastSpectrumState = null;
 let lastSpectrumOptions = {};
+let swapHighlightTimer = null;
+
+const VISUAL_PANEL_ORDER_KEY = 'ecd.visual-panel-order.v1';
 
 const refreshTableRows = () => {
   tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
@@ -89,6 +98,400 @@ const formatElapsed = (ms) => {
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
   const seconds = String(totalSeconds % 60).padStart(2, '0');
   return `${minutes}:${seconds}`;
+};
+
+const RESULTS_TABLE_CONFIG = {
+  columns: [
+    { key: 'ion', label: 'Ion' },
+    { key: 'formula', label: 'Formula' },
+    { key: 'obsMz', label: 'Obs m/z' },
+    { key: 'theoryMz', label: 'Theory m/z' },
+    { key: 'ppm', label: 'ppm' },
+    { key: 'charge', label: 'Charge' },
+    { key: 'intensity', label: 'Intensity' },
+    { key: 'score', label: 'Score' },
+  ],
+  sorts: {
+    score: { label: 'Sort by score', direction: 'desc' },
+    mz: { label: 'Sort by m/z', direction: 'desc' },
+    charge: { label: 'Sort by charge', direction: 'desc' },
+  },
+};
+
+const THEORETICAL_TABLE_CONFIG = {
+  columns: [
+    { key: 'ion', label: 'Ion' },
+    { key: 'cleavage', label: 'Cleavage' },
+    { key: 'chargeSummary', label: 'Charge States' },
+    { key: 'anchorRange', label: 'Anchor m/z Range' },
+    { key: 'variants', label: 'Variants' },
+    { key: 'theoryPeak', label: 'Max Theory Peak' },
+  ],
+  sorts: {
+    score: { label: 'Sort by variants', direction: 'desc' },
+    mz: { label: 'Sort by anchor m/z', direction: 'asc' },
+    charge: { label: 'Sort by cleavage', direction: 'asc' },
+  },
+};
+
+const THEORETICAL_ALL_TABLE_CONFIG = {
+  columns: [
+    { key: 'ion', label: 'Ion' },
+    { key: 'cleavage', label: 'Cleavage' },
+    { key: 'charge', label: 'Charge' },
+    { key: 'anchorMz', label: 'Anchor m/z' },
+    { key: 'variant', label: 'Variant' },
+    { key: 'theoryPeak', label: 'Max Theory Peak' },
+  ],
+  sorts: {
+    score: { label: 'Sort by ion', direction: 'asc' },
+    mz: { label: 'Sort by m/z', direction: 'asc' },
+    charge: { label: 'Sort by charge', direction: 'asc' },
+  },
+};
+
+const ION_RANK = { b: 0, c: 1, y: 2, z: 3 };
+
+const normalizeIonSeries = (value) => {
+  const ion = (value || '').toLowerCase();
+  if (ion.startsWith('b')) return 'b';
+  if (ion.startsWith('c')) return 'c';
+  if (ion.startsWith('y')) return 'y';
+  if (ion.startsWith('z')) return 'z';
+  return null;
+};
+
+const normalizeIonType = (value) => {
+  const ion = (value || '').toLowerCase();
+  if (ion === 'c-dot') return 'c-dot';
+  if (ion === 'z-dot') return 'z-dot';
+  return normalizeIonSeries(ion);
+};
+
+const getIonRank = (value) => ION_RANK[normalizeIonSeries(value)] ?? 9;
+
+const formatTheoreticalIonFilterLabel = (ionType) => `${ionType} ions`;
+
+const getTheoreticalModeValue = () => (
+  theoreticalMode && theoreticalMode.value === 'all' ? 'all' : 'grouped'
+);
+
+const getResultsTableConfig = () => {
+  if (activeTableView !== 'theoretical') {
+    return RESULTS_TABLE_CONFIG;
+  }
+  return getTheoreticalModeValue() === 'all' ? THEORETICAL_ALL_TABLE_CONFIG : THEORETICAL_TABLE_CONFIG;
+};
+
+const formatTableMz = (value) => (Number.isFinite(value) ? Number(value).toFixed(4) : '');
+const formatTablePpm = (value, fallback = '') => (Number.isFinite(value) ? Number(value).toFixed(4) : fallback);
+
+const formatChargeSummary = (charges) => {
+  const values = Array.isArray(charges)
+    ? charges.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
+    : [];
+  return values.map((value) => `${value}+`).join(', ');
+};
+
+const formatAnchorRange = (minValue, maxValue) => {
+  const min = Number.isFinite(minValue) ? Number(minValue) : null;
+  const max = Number.isFinite(maxValue) ? Number(maxValue) : null;
+  if (min == null && max == null) {
+    return '';
+  }
+  if (min != null && max != null && Math.abs(min - max) > 1e-6) {
+    return `${min.toFixed(4)} - ${max.toFixed(4)}`;
+  }
+  return formatTableMz(min ?? max);
+};
+
+const getSequenceText = () => String(peptideInput?.value || '').trim();
+
+const getCleavageIndex = (row) => {
+  const sequenceLength = getSequenceText().length;
+  if (sequenceLength >= 2) {
+    return computeFragmentIndex(row.ionType, row.fragLen, sequenceLength, row.fragmentIndex);
+  }
+  return Number.isFinite(row.fragmentIndex) ? Math.floor(row.fragmentIndex) : null;
+};
+
+const formatCleavageLabel = (row) => {
+  const index = getCleavageIndex(row);
+  if (!Number.isFinite(index)) {
+    return '';
+  }
+  const leftPos = index + 1;
+  const rightPos = index + 2;
+  const sequence = getSequenceText();
+  if (sequence.length > rightPos - 1) {
+    return `${sequence[index]}${leftPos}|${sequence[index + 1]}${rightPos}`;
+  }
+  return `${leftPos}|${rightPos}`;
+};
+
+const syncResultsTableControls = () => {
+  if (!resultsTable) {
+    return;
+  }
+  const config = getResultsTableConfig();
+  const headerRow = resultsTable.querySelector('thead tr');
+  if (headerRow) {
+    headerRow.innerHTML = config.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+  }
+  if (!resultsSort) {
+    return;
+  }
+  Object.entries(config.sorts).forEach(([key, meta]) => {
+    const option = resultsSort.querySelector(`option[value="${key}"]`);
+    if (option) {
+      option.textContent = meta.label;
+    }
+  });
+  const showTheoreticalFilters = activeTableView === 'theoretical';
+  if (theoreticalMode) {
+    theoreticalMode.hidden = !showTheoreticalFilters;
+  }
+  if (theoreticalIonFilter) {
+    theoreticalIonFilter.hidden = !showTheoreticalFilters;
+  }
+  if (theoreticalChargeFilter) {
+    theoreticalChargeFilter.hidden = !showTheoreticalFilters;
+  }
+};
+
+const getResultsRowViewModel = (frag) => ({
+  cells: {
+    ion: frag.displayLabel || (frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : ''),
+    formula: frag.formula || '',
+    obsMz: formatTableMz(frag.obsMz),
+    theoryMz: formatTableMz(frag.anchorMz),
+    ppm: formatTablePpm(frag.anchorPpm),
+    charge: frag.charge ? `${frag.charge}+` : '',
+    intensity: frag.obsInt != null ? Math.round(frag.obsInt).toLocaleString() : '',
+    score: Number.isFinite(frag.score) ? frag.score.toFixed(3) : (frag.css != null ? frag.css.toFixed(3) : ''),
+  },
+  sortValues: {
+    score: Number.isFinite(frag.score) ? frag.score : (Number.isFinite(frag.css) ? frag.css : null),
+    mz: Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz,
+    charge: Number.isFinite(frag.charge) ? frag.charge : null,
+  },
+  centerMz: Number.isFinite(frag.obsMz) ? frag.obsMz : frag.anchorMz,
+});
+
+const getTheoreticalRowViewModel = (frag) => ({
+  cells: {
+    ion: frag.displayLabel || (frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : ''),
+    cleavage: formatCleavageLabel(frag),
+    chargeSummary: frag.chargeSummary || formatChargeSummary(frag.chargeStates),
+    anchorRange: formatAnchorRange(frag.anchorMzMin, frag.anchorMzMax),
+    variants: Number.isFinite(frag.variantCount) ? String(frag.variantCount) : '',
+    theoryPeak: Number.isFinite(frag.theoryPeakMax) ? Math.round(frag.theoryPeakMax).toLocaleString() : '',
+  },
+  sortValues: {
+    score: Number.isFinite(frag.variantCount) ? frag.variantCount : null,
+    mz: Number.isFinite(frag.anchorMzMin) ? frag.anchorMzMin : frag.anchorMz,
+    charge: Number.isFinite(getCleavageIndex(frag)) ? getCleavageIndex(frag) + 1 : null,
+  },
+  centerMz: Number.isFinite(frag.anchorMz) ? frag.anchorMz : frag.anchorMzMin,
+});
+
+const getTheoreticalAllRowViewModel = (frag) => {
+  const ionRank = getIonRank(frag.ionType);
+  const variantParts = [frag.variantSuffix, frag.lossSuffix].filter(Boolean);
+  return {
+    cells: {
+      ion: frag.displayLabel || frag.label || (frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : ''),
+      cleavage: formatCleavageLabel(frag),
+      charge: frag.charge ? `${frag.charge}+` : '',
+      anchorMz: formatTableMz(frag.anchorMz),
+      variant: variantParts.length ? variantParts.join(' ') : 'neutral',
+      theoryPeak: Number.isFinite(frag.theoryPeakMax) ? Math.round(frag.theoryPeakMax).toLocaleString() : '',
+    },
+    sortValues: {
+      score: ionRank * 1000 + (Number.isFinite(frag.fragLen) ? frag.fragLen : 0),
+      mz: Number.isFinite(frag.anchorMz) ? frag.anchorMz : null,
+      charge: Number.isFinite(frag.charge) ? frag.charge : null,
+    },
+    centerMz: Number.isFinite(frag.anchorMz) ? frag.anchorMz : null,
+  };
+};
+
+const getRowSortDataset = (sortValues) => ({
+  score: Number.isFinite(sortValues.score) ? String(sortValues.score) : '',
+  mz: Number.isFinite(sortValues.mz) ? String(sortValues.mz) : '',
+  charge: Number.isFinite(sortValues.charge) ? String(sortValues.charge) : '',
+});
+
+const getSelectedTheoreticalCharge = () => {
+  if (!theoreticalChargeFilter || theoreticalChargeFilter.value === 'all') {
+    return null;
+  }
+  const value = Number(theoreticalChargeFilter.value);
+  return Number.isFinite(value) ? value : null;
+};
+
+const rowMatchesTheoreticalFilters = (row) => {
+  const ionValue = theoreticalIonFilter ? theoreticalIonFilter.value : 'all';
+  if (ionValue !== 'all' && row.ionType !== ionValue) {
+    return false;
+  }
+  const chargeValue = getSelectedTheoreticalCharge();
+  if (!Number.isFinite(chargeValue)) {
+    return true;
+  }
+  if (getTheoreticalModeValue() === 'all') {
+    return Number.isFinite(row.charge) && row.charge === chargeValue;
+  }
+  if (Array.isArray(row.chargeStates) && row.chargeStates.length) {
+    return row.chargeStates.includes(chargeValue);
+  }
+  return Number.isFinite(row.charge) && row.charge === chargeValue;
+};
+
+const getFilteredRawTheoreticalRows = () => (
+  (Array.isArray(theoreticalRows) ? theoreticalRows : []).filter(rowMatchesTheoreticalFilters)
+);
+
+const getFilteredTheoreticalRows = () => {
+  const baseRows = getTheoreticalModeValue() === 'all'
+    ? theoreticalRows
+    : (Array.isArray(theoreticalDisplayRows) && theoreticalDisplayRows.length ? theoreticalDisplayRows : theoreticalRows);
+  return (Array.isArray(baseRows) ? baseRows : []).filter(rowMatchesTheoreticalFilters);
+};
+
+const syncTheoreticalChargeFilterOptions = () => {
+  if (!theoreticalChargeFilter) {
+    return;
+  }
+  const currentValue = theoreticalChargeFilter.value || 'all';
+  const charges = Array.from(
+    new Set(
+      (Array.isArray(theoreticalRows) ? theoreticalRows : [])
+        .map((row) => row.charge)
+        .filter((value) => Number.isFinite(value))
+    )
+  ).sort((a, b) => a - b);
+  theoreticalChargeFilter.innerHTML = [
+    '<option value="all">All charges</option>',
+    ...charges.map((charge) => `<option value="${charge}">${charge}+</option>`),
+  ].join('');
+  theoreticalChargeFilter.value = charges.some((charge) => String(charge) === currentValue) ? currentValue : 'all';
+};
+
+const syncTheoreticalIonFilterOptions = () => {
+  if (!theoreticalIonFilter) {
+    return;
+  }
+  const currentValue = theoreticalIonFilter.value || 'all';
+  const ionTypes = Array.from(
+    new Set(
+      (Array.isArray(theoreticalRows) ? theoreticalRows : [])
+        .map((row) => normalizeIonType(row.ionType))
+        .filter(Boolean)
+    )
+  ).sort((left, right) => (
+    getIonRank(left) - getIonRank(right) || String(left).localeCompare(String(right))
+  ));
+  theoreticalIonFilter.innerHTML = [
+    '<option value="all">All ion types</option>',
+    ...ionTypes.map((ionType) => `<option value="${ionType}">${formatTheoreticalIonFilterLabel(ionType)}</option>`),
+  ].join('');
+  theoreticalIonFilter.value = ionTypes.includes(currentValue) ? currentValue : 'all';
+};
+
+const getVisualPanels = () => (
+  visualsStack ? Array.from(visualsStack.querySelectorAll('[data-reorderable-panel]')) : []
+);
+
+const resizeVisualPlots = () => {
+  if (typeof Plotly === 'undefined' || !Plotly?.Plots || typeof Plotly.Plots.resize !== 'function') {
+    return;
+  }
+  ['spectrumPlot', 'coveragePlot'].forEach((id) => {
+    const plot = document.getElementById(id);
+    if (!plot) {
+      return;
+    }
+    try {
+      Plotly.Plots.resize(plot);
+    } catch (error) {
+      // Ignore transient resize failures while panels are moving.
+    }
+  });
+};
+
+const persistVisualPanelOrder = () => {
+  if (!visualsStack) {
+    return;
+  }
+  try {
+    const order = getVisualPanels()
+      .map((panel) => panel.dataset.panelId)
+      .filter(Boolean);
+    localStorage.setItem(VISUAL_PANEL_ORDER_KEY, JSON.stringify(order));
+  } catch (error) {
+    // Ignore localStorage failures.
+  }
+};
+
+const applyVisualPanelOrder = (order) => {
+  if (!visualsStack || !Array.isArray(order) || !order.length) {
+    return;
+  }
+  const panels = new Map(getVisualPanels().map((panel) => [panel.dataset.panelId, panel]));
+  order.forEach((id) => {
+    const panel = panels.get(id);
+    if (panel) {
+      visualsStack.appendChild(panel);
+    }
+  });
+  requestAnimationFrame(() => resizeVisualPlots());
+};
+
+const swapVisualPanels = (firstId, secondId) => {
+  if (!visualsStack || !firstId || !secondId || firstId === secondId) {
+    return null;
+  }
+  const order = getVisualPanels()
+    .map((panel) => panel.dataset.panelId)
+    .filter(Boolean);
+  const firstIndex = order.indexOf(firstId);
+  const secondIndex = order.indexOf(secondId);
+  if (firstIndex === -1 || secondIndex === -1) {
+    return null;
+  }
+  [order[firstIndex], order[secondIndex]] = [order[secondIndex], order[firstIndex]];
+  applyVisualPanelOrder(order);
+  persistVisualPanelOrder();
+  highlightSwappedPanels(firstId, secondId);
+  return new Map(getVisualPanels().map((panel) => [panel.dataset.panelId, panel]));
+};
+
+const loadVisualPanelOrder = () => {
+  try {
+    const raw = localStorage.getItem(VISUAL_PANEL_ORDER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const highlightSwappedPanels = (...panelIds) => {
+  const ids = panelIds.filter(Boolean);
+  if (!ids.length) {
+    return;
+  }
+  if (swapHighlightTimer) {
+    clearTimeout(swapHighlightTimer);
+    swapHighlightTimer = null;
+  }
+  getVisualPanels().forEach((panel) => {
+    panel.classList.toggle('is-swapped', ids.includes(panel.dataset.panelId));
+  });
+  swapHighlightTimer = setTimeout(() => {
+    getVisualPanels().forEach((panel) => panel.classList.remove('is-swapped'));
+    swapHighlightTimer = null;
+  }, 1200);
 };
 
 const setWarnings = (items) => {
@@ -232,6 +635,7 @@ const loadConfig = async () => {
 };
 
 const updateResultsTable = (fragments) => {
+  syncResultsTableControls();
   const tbody = resultsTable.querySelector('tbody');
   const withIndex = fragments.map((frag, idx) => ({ ...frag, _idx: idx }));
   const ranked = withIndex.sort((a, b) => {
@@ -242,26 +646,27 @@ const updateResultsTable = (fragments) => {
   tbody.innerHTML = ranked
     .map((frag) => {
       const isTheoreticalRow = activeTableView === 'theoretical';
-      const ionFallback = frag.ionType ? `${frag.ionType}${frag.fragLen ?? ''}` : '';
-      const ion = frag.displayLabel || ionFallback;
-      const formula = frag.formula || '';
-      const obsMzValue = isTheoreticalRow ? frag.anchorMz : frag.obsMz;
-      const obsMz = obsMzValue != null ? obsMzValue.toFixed(4) : '';
-      const theoryMz = frag.anchorMz != null ? frag.anchorMz.toFixed(4) : '';
-      const ppm = isTheoreticalRow ? '' : (frag.anchorPpm != null ? frag.anchorPpm.toFixed(1) : '');
-      const centerMz = Number.isFinite(obsMzValue) ? obsMzValue : frag.anchorMz;
-      const charge = frag.charge ? `${frag.charge}+` : '';
-      const intensityValue = isTheoreticalRow ? frag.theoryPeakMax : frag.obsInt;
-      const intensity = intensityValue != null ? Math.round(intensityValue).toLocaleString() : '';
-      const scoreValue = Number.isFinite(frag.score) ? frag.score : frag.css;
-      const score = scoreValue != null ? scoreValue.toFixed(3) : '';
+      const config = getResultsTableConfig();
+      const viewModel = isTheoreticalRow
+        ? (getTheoreticalModeValue() === 'all' ? getTheoreticalAllRowViewModel(frag) : getTheoreticalRowViewModel(frag))
+        : getResultsRowViewModel(frag);
+      const sortDataset = getRowSortDataset(viewModel.sortValues);
+      const centerMz = viewModel.centerMz;
       const centerAttr = Number.isFinite(centerMz) ? ` data-center-mz="${centerMz}"` : '';
+      const theoryRowIndex = Number.isFinite(frag.theoryRowIndex) ? frag.theoryRowIndex : frag._idx;
       const matchAttr = Number.isFinite(frag._idx)
-        ? (isTheoreticalRow ? ` data-theory-idx="${frag._idx}"` : ` data-match-idx="${frag._idx}"`)
+        ? (isTheoreticalRow ? ` data-theory-idx="${theoryRowIndex}"` : ` data-match-idx="${frag._idx}"`)
         : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
-      return `<tr${centerAttr}${matchAttr}${theoryAttr}>\n        <td>${ion}</td>\n        <td>${formula}</td>\n        <td>${obsMz}</td>\n        <td>${theoryMz}</td>\n        <td>${ppm}</td>\n        <td>${charge}</td>\n        <td>${intensity}</td>\n        <td>${score}</td>\n      </tr>`;
+      const sortAttrs =
+        ` data-sort-score="${escapeHtml(sortDataset.score)}"` +
+        ` data-sort-mz="${escapeHtml(sortDataset.mz)}"` +
+        ` data-sort-charge="${escapeHtml(sortDataset.charge)}"`;
+      const cells = config.columns
+        .map((column) => `<td>${escapeHtml(viewModel.cells[column.key] ?? '')}</td>`)
+        .join('');
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}${sortAttrs}>${cells}</tr>`;
     })
     .join('');
   activeResultRow = null;
@@ -274,9 +679,10 @@ const buildTheoreticalRows = (rows) => {
   const source = Array.isArray(rows) ? rows : [];
   return source
     .filter((row) => Array.isArray(row.theoryMz) && row.theoryMz.length && Array.isArray(row.theoryIntensity) && row.theoryIntensity.length)
-    .map((row) => ({
+    .map((row, idx) => ({
       displayLabel: row.displayLabel || row.label || (row.ionType ? `${row.ionType}${row.fragLen ?? ''}` : 'Theory'),
       ionType: row.ionType,
+      ionSeries: row.ionSeries || normalizeIonSeries(row.ionType),
       fragLen: row.fragLen,
       fragmentIndex: row.fragmentIndex,
       charge: row.charge,
@@ -292,13 +698,16 @@ const buildTheoreticalRows = (rows) => {
       theoryPeakMax: Math.max(...row.theoryIntensity.filter((v) => Number.isFinite(v)), 0),
       overlayColor: row.overlayColor || '#8b5cf6',
       target: row.target,
+      variantSuffix: row.variantSuffix || '',
+      lossSuffix: row.lossSuffix || '',
+      theoryRowIndex: idx,
     }));
 };
 
 const normalizeTheoreticalRows = (rows) => {
   const source = Array.isArray(rows) ? rows : [];
   return source
-    .map((row) => {
+    .map((row, idx) => {
       const theoryMz = Array.isArray(row.theory_mz)
         ? row.theory_mz
         : (Array.isArray(row.theoryMz) ? row.theoryMz : []);
@@ -309,7 +718,8 @@ const normalizeTheoreticalRows = (rows) => {
         return null;
       }
       const ionTypeRaw = row.ion_type || row.ionType || '';
-      const ionType = String(ionTypeRaw || '').toLowerCase().slice(0, 1);
+      const ionType = normalizeIonType(ionTypeRaw);
+      const ionSeries = normalizeIonSeries(row.series || row.ionSeries || ionType);
       const fragLenRaw = row.frag_len ?? row.fragLen;
       const chargeRaw = row.charge;
       const anchorRaw = row.anchor_theory_mz ?? row.anchorMz;
@@ -317,6 +727,7 @@ const normalizeTheoreticalRows = (rows) => {
       return {
         displayLabel: row.label || (ionType && Number.isFinite(Number(fragLenRaw)) ? `${ionType}${Number(fragLenRaw)}` : 'Theory'),
         ionType,
+        ionSeries,
         fragLen: Number.isFinite(Number(fragLenRaw)) ? Number(fragLenRaw) : null,
         fragmentIndex: row.fragment_index ?? row.fragmentIndex ?? null,
         charge: Number.isFinite(Number(chargeRaw)) ? Number(chargeRaw) : null,
@@ -332,9 +743,110 @@ const normalizeTheoreticalRows = (rows) => {
         theoryPeakMax: Math.max(...theoryIntensity.filter((v) => Number.isFinite(v)), 0),
         overlayColor: row.overlayColor || '#8b5cf6',
         target: row.target,
+        variantSuffix: row.variant_suffix || row.variantSuffix || '',
+        lossSuffix: row.loss_suffix || row.lossSuffix || '',
+        theoryRowIndex: Number.isFinite(Number(row.theoryRowIndex)) ? Number(row.theoryRowIndex) : idx,
       };
     })
     .filter(Boolean);
+};
+
+const compareTheoreticalRepresentative = (left, right) => {
+  const leftCharge = Number.isFinite(left?.charge) ? left.charge : Infinity;
+  const rightCharge = Number.isFinite(right?.charge) ? right.charge : Infinity;
+  if (leftCharge !== rightCharge) {
+    return leftCharge - rightCharge;
+  }
+  const leftMz = Number.isFinite(left?.anchorMz) ? left.anchorMz : Infinity;
+  const rightMz = Number.isFinite(right?.anchorMz) ? right.anchorMz : Infinity;
+  if (leftMz !== rightMz) {
+    return leftMz - rightMz;
+  }
+  return String(left?.label || '').localeCompare(String(right?.label || ''));
+};
+
+const buildTheoreticalDisplayRows = (rows) => {
+  const source = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+  source.forEach((row, idx) => {
+    if (!row || !row.ionType || !Number.isFinite(row.fragLen)) {
+      return;
+    }
+    const fragmentIndex = Number.isFinite(row.fragmentIndex) ? row.fragmentIndex : null;
+    const key = `${row.ionType}:${row.fragLen}:${fragmentIndex ?? 'na'}`;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        key,
+        ionType: row.ionType,
+        ionSeries: row.ionSeries || normalizeIonSeries(row.ionType),
+        fragLen: row.fragLen,
+        fragmentIndex,
+        representative: row,
+        representativeIndex: idx,
+        variantCount: 1,
+        chargeStates: new Set(Number.isFinite(row.charge) ? [row.charge] : []),
+        anchorMzMin: Number.isFinite(row.anchorMz) ? row.anchorMz : Infinity,
+        anchorMzMax: Number.isFinite(row.anchorMz) ? row.anchorMz : -Infinity,
+        theoryPeakMax: Number.isFinite(row.theoryPeakMax) ? row.theoryPeakMax : -Infinity,
+      });
+      return;
+    }
+    current.variantCount += 1;
+    if (Number.isFinite(row.charge)) {
+      current.chargeStates.add(row.charge);
+    }
+    if (Number.isFinite(row.anchorMz)) {
+      current.anchorMzMin = Math.min(current.anchorMzMin, row.anchorMz);
+      current.anchorMzMax = Math.max(current.anchorMzMax, row.anchorMz);
+    }
+    if (Number.isFinite(row.theoryPeakMax)) {
+      current.theoryPeakMax = Math.max(current.theoryPeakMax, row.theoryPeakMax);
+    }
+    if (compareTheoreticalRepresentative(row, current.representative) < 0) {
+      current.representative = row;
+      current.representativeIndex = idx;
+    }
+  });
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      displayLabel: `${group.ionType}${group.fragLen}`,
+      ionType: group.ionType,
+      ionSeries: group.ionSeries,
+      fragLen: group.fragLen,
+      fragmentIndex: group.fragmentIndex,
+      charge: group.representative.charge,
+      chargeStates: Array.from(group.chargeStates).sort((a, b) => a - b),
+      chargeSummary: formatChargeSummary(Array.from(group.chargeStates)),
+      obsMz: null,
+      obsInt: null,
+      css: 0,
+      score: group.variantCount,
+      anchorMz: group.representative.anchorMz,
+      anchorMzMin: Number.isFinite(group.anchorMzMin) ? group.anchorMzMin : group.representative.anchorMz,
+      anchorMzMax: Number.isFinite(group.anchorMzMax) ? group.anchorMzMax : group.representative.anchorMz,
+      label: `${group.ionType}${group.fragLen}`,
+      formula: '',
+      theoryMz: group.representative.theoryMz,
+      theoryIntensity: group.representative.theoryIntensity,
+      theoryPeakMax: Number.isFinite(group.theoryPeakMax) ? group.theoryPeakMax : group.representative.theoryPeakMax,
+      overlayColor: group.representative.overlayColor || '#8b5cf6',
+      target: group.representative.target,
+      theoryRowIndex: group.representativeIndex,
+      variantCount: group.variantCount,
+    }))
+    .sort((a, b) => {
+      return (
+        getIonRank(a.ionType) - getIonRank(b.ionType) ||
+        (a.fragLen ?? 0) - (b.fragLen ?? 0) ||
+        (a.fragmentIndex ?? 0) - (b.fragmentIndex ?? 0)
+      );
+    });
+};
+
+const getTheoreticalTableRows = () => {
+  return getFilteredTheoreticalRows();
 };
 
 const setCoverageRows = (rows, theoreticalOverride = null) => {
@@ -344,13 +856,17 @@ const setCoverageRows = (rows, theoreticalOverride = null) => {
   } else {
     theoreticalRows = buildTheoreticalRows(coverageRows);
   }
-  const tableData = activeTableView === 'theoretical' ? theoreticalRows : coverageRows;
+  theoreticalDisplayRows = buildTheoreticalDisplayRows(theoreticalRows);
+  syncTheoreticalIonFilterOptions();
+  syncTheoreticalChargeFilterOptions();
+  const tableData = activeTableView === 'theoretical' ? getTheoreticalTableRows() : coverageRows;
   updateResultsTable(tableData);
 };
 
 const applyFragments = (fragments, sequence, mode = 'fragments', theoreticalFragments = null) => {
   const normalized = fragments.map((frag) => ({
     ionType: frag.ion_type,
+    ionSeries: normalizeIonSeries(frag.series || frag.ion_type),
     fragLen: frag.frag_len,
     fragmentIndex: frag.fragment_index,
     charge: frag.charge,
@@ -373,33 +889,59 @@ const applyFragments = (fragments, sequence, mode = 'fragments', theoreticalFrag
   rerenderCoverage();
 };
 
+const buildSpectrumOverlaysFromCandidates = (candidates, defaultColor = '#f59e0b') => {
+  const source = Array.isArray(candidates) ? candidates : [];
+  return source
+    .map((cand) => {
+      const mz = Array.isArray(cand?.theory_mz) ? cand.theory_mz : [];
+      const intensity = Array.isArray(cand?.theory_intensity) ? cand.theory_intensity : [];
+      if (!mz.length || !intensity.length) return null;
+      return {
+        mz,
+        intensity,
+        color: cand.color || defaultColor,
+        label: cand.label || 'Theory',
+        target: cand.target,
+        status: cand.status,
+      };
+    })
+    .filter(Boolean);
+};
+
 const applyPrecursorResults = (data) => {
   const sequence = data.sequence;
   if (sequence && sequence !== peptideInput.value) {
     peptideInput.value = sequence;
   }
   const summary = data.precursor || {};
-  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
-  const rows = candidates.map((cand) => ({
-    displayLabel: `Precursor ${cand.charge}+`,
-    ionType: 'p',
-    fragLen: cand.charge,
-    fragmentIndex: null,
-    charge: cand.charge,
-    obsMz: cand.obs_mz,
-    obsInt: null,
-    css: cand.css,
-    score: cand.composite_score ?? cand.score ?? cand.css,
-    anchorMz: cand.anchor_theory_mz,
-    anchorPpm: cand.ppm,
-    accepted: cand.accepted,
-    coverage: cand.coverage,
-    ppmRmse: cand.ppm_rmse,
-    label: `Precursor ${cand.charge}+`,
-    theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
-    theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
-    overlayColor: cand.color || '#ef4444',
-  }));
+  const acceptedCandidates = Array.isArray(data.candidates) ? data.candidates : [];
+  const ambiguousCandidates = Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates : [];
+  const visibleCandidates = acceptedCandidates.length ? acceptedCandidates : ambiguousCandidates;
+  const rows = visibleCandidates.map((cand) => {
+    const isAccepted = cand.accepted !== false && cand.status !== 'ambiguous';
+    const prefix = isAccepted ? '' : '? ';
+    return {
+      displayLabel: `${prefix}Precursor ${cand.charge}+`,
+      ionType: 'p',
+      fragLen: cand.charge,
+      fragmentIndex: null,
+      charge: cand.charge,
+      obsMz: cand.obs_mz,
+      obsInt: null,
+      css: cand.css,
+      score: cand.composite_score ?? cand.score ?? cand.css,
+      anchorMz: cand.anchor_theory_mz,
+      anchorPpm: cand.ppm,
+      accepted: cand.accepted,
+      status: cand.status || (isAccepted ? 'accepted' : 'ambiguous'),
+      coverage: cand.coverage,
+      ppmRmse: cand.ppm_rmse,
+      label: `Precursor ${cand.charge}+`,
+      theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
+      theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
+      overlayColor: cand.color || (isAccepted ? '#ef4444' : '#f59e0b'),
+    };
+  });
   setCoverageRows(rows, data.theoretical_fragments);
   hideCoveragePopover();
   rerenderCoverage();
@@ -407,13 +949,28 @@ const applyPrecursorResults = (data) => {
   const bestCss = toNumberOrNull(summary.best_css);
   const bestScore = toNumberOrNull(summary.best_score ?? summary.best_css);
   const shiftPpm = toNumberOrNull(summary.shift_ppm);
+  const blockReasons = Array.isArray(summary.calibration_block_reasons)
+    ? summary.calibration_block_reasons.filter(Boolean)
+    : [];
   if (summary.match_found) {
     const bestCharge = summary.best_charge ? `${summary.best_charge}+` : '?';
     const scoreText = Number.isFinite(bestScore) ? bestScore.toFixed(3) : '--';
     const cssText = Number.isFinite(bestCss) ? bestCss.toFixed(3) : '--';
     const shiftApplied = Number.isFinite(shiftPpm) ? -shiftPpm : null;
-    const shiftText = shiftApplied != null ? `, shift ${shiftApplied.toFixed(2)} ppm` : '';
-    setCoverageStatus(`Precursor ${bestCharge} score=${scoreText} (css=${cssText})${shiftText}`);
+    const shiftText = shiftApplied != null ? `, shift ${formatTablePpm(shiftApplied, '--')} ppm` : '';
+    let statusText = `Precursor ${bestCharge} score=${scoreText} (css=${cssText})${shiftText}`;
+    if (summary.calibration_requested) {
+      if (summary.calibration_applied) {
+        statusText += ', calibrated';
+      } else if (blockReasons.length) {
+        statusText += `, calibration blocked: ${blockReasons.join(', ')}`;
+      } else {
+        statusText += ', calibration skipped';
+      }
+    }
+    setCoverageStatus(statusText, !summary.calibration_applied && blockReasons.length > 0);
+  } else if (summary.search_status === 'ambiguous' || ambiguousCandidates.length) {
+    setCoverageStatus(`Precursor ambiguous: ${ambiguousCandidates.length} close candidates`, true);
   } else {
     setCoverageStatus('Precursor not found', true);
   }
@@ -424,32 +981,54 @@ const applyChargeReducedResults = (data) => {
   if (sequence && sequence !== peptideInput.value) {
     peptideInput.value = sequence;
   }
-  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
-  const rows = candidates.map((cand) => {
+  const acceptedCandidates = Array.isArray(data.candidates) ? data.candidates : [];
+  const ambiguousCandidates = Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates : [];
+  const shadowedCandidates = Array.isArray(data.shadowed_candidates) ? data.shadowed_candidates : [];
+  const visibleCandidates = acceptedCandidates.length ? acceptedCandidates : ambiguousCandidates;
+  const rows = visibleCandidates.map((cand) => {
     const target = cand.target ? `${cand.target} ` : '';
     const state = cand.state && cand.state !== '0' ? ` ${cand.state}` : '';
+    const isAccepted = (cand.status || 'accepted') === 'accepted';
+    const prefix = isAccepted ? '' : '? ';
     return {
-      displayLabel: `CR ${target}${cand.charge}+${state}`.trim(),
+      displayLabel: `${prefix}CR ${target}${cand.charge}+${state}`.trim(),
       ionType: 'cr',
-      fragLen: cand.charge,
+      fragLen: null,
       fragmentIndex: null,
       charge: cand.charge,
       obsMz: cand.obs_mz,
       obsInt: cand.obs_int,
       css: cand.css,
+      score: cand.score ?? cand.css,
       anchorMz: cand.anchor_theory_mz,
       anchorPpm: cand.ppm,
       label: cand.label,
+      status: cand.status || (isAccepted ? 'accepted' : 'ambiguous'),
+      coverage: cand.coverage,
+      ppmRmse: cand.ppm_rmse,
+      matchCount: cand.match_count,
+      strategy: cand.strategy,
       theoryMz: Array.isArray(cand.theory_mz) ? cand.theory_mz : [],
       theoryIntensity: Array.isArray(cand.theory_intensity) ? cand.theory_intensity : [],
-      overlayColor: cand.color || '#0f172a',
+      overlayColor: cand.color || (isAccepted ? '#0f172a' : '#f59e0b'),
       target: cand.target,
     };
   });
   setCoverageRows(rows, data.theoretical_fragments);
   hideCoveragePopover();
   rerenderCoverage();
-  setCoverageStatus(rows.length ? `Charge reduced: ${rows.length} candidates` : 'Charge reduced: no matches', !rows.length);
+  if (acceptedCandidates.length) {
+    setCoverageStatus(
+      `Charge reduced: ${acceptedCandidates.length} accepted, ${ambiguousCandidates.length} ambiguous, ${shadowedCandidates.length} shadowed`
+    );
+  } else if (ambiguousCandidates.length) {
+    setCoverageStatus(
+      `Charge reduced ambiguous: ${ambiguousCandidates.length} candidates (${shadowedCandidates.length} shadowed)`,
+      true
+    );
+  } else {
+    setCoverageStatus('Charge reduced: no matches', true);
+  }
 };
 
 const applyRawResults = (data) => {
@@ -713,23 +1292,52 @@ const startRun = async () => {
     if (isPrecursorMode) {
       lastPrecursorWindow = parsePlotWindow(data.plot_window);
       applyPrecursorResults(data);
+      const precursorCandidates = Array.isArray(data.candidates) && data.candidates.length
+        ? data.candidates
+        : (Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates : []);
       applySpectrum(data.spectrum, data.theory, {
         rangeOverride: lastPrecursorWindow,
+        overlays: buildSpectrumOverlaysFromCandidates(precursorCandidates, '#f59e0b'),
         theoryColor: '#ef4444',
         mode: 'precursor',
       });
-      const matchFound = Boolean(data.precursor && data.precursor.match_found);
-      setWarnings(matchFound ? [] : ['Precursor not found. Try adjusting charge range or tolerance.']);
+      const precursorSummary = data.precursor || {};
+      const warnings = [];
+      const ambiguousCount = Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates.length : 0;
+      const blockReasons = Array.isArray(precursorSummary.calibration_block_reasons)
+        ? precursorSummary.calibration_block_reasons.filter(Boolean)
+        : [];
+      if (precursorSummary.search_status === 'ambiguous' || ambiguousCount) {
+        warnings.push(`Precursor ambiguous: ${ambiguousCount} close candidates.`);
+      } else if (!precursorSummary.match_found) {
+        warnings.push('Precursor not found. Try adjusting charge range or tolerance.');
+      }
+      if (precursorSummary.calibration_requested && !precursorSummary.calibration_applied && blockReasons.length) {
+        warnings.push(`Precursor calibration blocked: ${blockReasons.join(', ')}`);
+      }
+      setWarnings(warnings);
     } else if (isChargeReducedMode) {
       lastPrecursorWindow = null;
       applyChargeReducedResults(data);
+      const crCandidates = Array.isArray(data.candidates) && data.candidates.length
+        ? data.candidates
+        : (Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates : []);
       applySpectrum(data.spectrum, data.theory, {
-        overlays: data.overlays,
+        overlays: Array.isArray(data.overlays) && data.overlays.length
+          ? data.overlays
+          : buildSpectrumOverlaysFromCandidates(crCandidates, '#f59e0b'),
         theoryColor: '#0f172a',
         mode: 'charge_reduced',
       });
-      const count = Number(data.count || 0);
-      setWarnings(count === 0 ? ['No charge-reduced matches found.'] : []);
+      const acceptedCount = Number(data.count || 0);
+      const ambiguousCount = Array.isArray(data.ambiguous_candidates) ? data.ambiguous_candidates.length : 0;
+      const warnings = [];
+      if (!acceptedCount && ambiguousCount) {
+        warnings.push(`Only ambiguous charge-reduced candidates found (${ambiguousCount}).`);
+      } else if (!acceptedCount) {
+        warnings.push('No charge-reduced matches found.');
+      }
+      setWarnings(warnings);
     } else if (isDiagnoseMode) {
       lastPrecursorWindow = null;
       applyDiagnoseResults(data);
@@ -816,26 +1424,67 @@ resultsFilter.addEventListener('input', applyTableFilter);
 if (resultsView) {
   resultsView.addEventListener('change', () => {
     activeTableView = resultsView.value === 'theoretical' ? 'theoretical' : 'results';
-    if (activeTableView === 'theoretical' && resultsSort && resultsSort.value === 'score') {
-      resultsSort.value = 'mz';
+    if (resultsSort) {
+      if (activeTableView === 'theoretical') {
+        resultsSort.value = getTheoreticalModeValue() === 'all' ? 'mz' : 'charge';
+      } else {
+        resultsSort.value = 'score';
+      }
     }
-    const tableData = activeTableView === 'theoretical' ? theoreticalRows : coverageRows;
+    syncResultsTableControls();
+    const tableData = activeTableView === 'theoretical' ? getTheoreticalTableRows() : coverageRows;
     updateResultsTable(Array.isArray(tableData) ? tableData : []);
+    rerenderCoverage();
+  });
+}
+
+if (theoreticalMode) {
+  theoreticalMode.addEventListener('change', () => {
+    if (activeTableView !== 'theoretical') {
+      return;
+    }
+    if (resultsSort) {
+      resultsSort.value = getTheoreticalModeValue() === 'all' ? 'mz' : 'charge';
+    }
+    syncResultsTableControls();
+    updateResultsTable(getTheoreticalTableRows());
+    rerenderCoverage();
+  });
+}
+
+if (theoreticalIonFilter) {
+  theoreticalIonFilter.addEventListener('change', () => {
+    if (activeTableView !== 'theoretical') {
+      return;
+    }
+    updateResultsTable(getTheoreticalTableRows());
+    rerenderCoverage();
+  });
+}
+
+if (theoreticalChargeFilter) {
+  theoreticalChargeFilter.addEventListener('change', () => {
+    if (activeTableView !== 'theoretical') {
+      return;
+    }
+    updateResultsTable(getTheoreticalTableRows());
+    rerenderCoverage();
   });
 }
 
 resultsSort.addEventListener('change', () => {
   const key = resultsSort.value;
+  const config = getResultsTableConfig();
+  const sortMeta = config.sorts[key] || config.sorts.score;
+  const datasetKey = key === 'mz' ? 'sortMz' : key === 'charge' ? 'sortCharge' : 'sortScore';
   const sorted = [...tableRows].sort((a, b) => {
-    const aCells = a.querySelectorAll('td');
-    const bCells = b.querySelectorAll('td');
     const safe = (value) => (Number.isFinite(value) ? value : -Infinity);
-    const values = {
-      score: [safe(parseFloat(aCells[7].textContent)), safe(parseFloat(bCells[7].textContent))],
-      mz: [safe(parseFloat(aCells[2].textContent)), safe(parseFloat(bCells[2].textContent))],
-      charge: [safe(parseInt(aCells[5].textContent, 10)), safe(parseInt(bCells[5].textContent, 10))],
-    };
-    return values[key][1] - values[key][0];
+    const aValue = safe(parseFloat(a.dataset[datasetKey]));
+    const bValue = safe(parseFloat(b.dataset[datasetKey]));
+    if (sortMeta.direction === 'asc') {
+      return aValue - bValue;
+    }
+    return bValue - aValue;
   });
   const tbody = resultsTable.querySelector('tbody');
   sorted.forEach((row) => tbody.appendChild(row));
@@ -1067,15 +1716,6 @@ const parseCsv = (text) => {
   });
 };
 
-const normalizeIonType = (value) => {
-  const ion = (value || '').toLowerCase();
-  if (ion.startsWith('b')) return 'b';
-  if (ion.startsWith('c')) return 'c';
-  if (ion.startsWith('y')) return 'y';
-  if (ion.startsWith('z')) return 'z';
-  return null;
-};
-
 const parseCoverageRows = (text) => {
   const rows = parseCsv(text);
   if (!rows.length || !('ion_type' in rows[0]) || !('frag_len' in rows[0])) {
@@ -1084,6 +1724,7 @@ const parseCoverageRows = (text) => {
   return rows
     .map((row) => ({
       ionType: normalizeIonType(row.ion_type),
+      ionSeries: normalizeIonSeries(row.series || row.ion_type),
       fragLen: Number(row.frag_len),
       fragmentIndex: toNumberOrNull(row.fragment_index),
       charge: toNumberOrNull(row.charge),
@@ -1122,11 +1763,12 @@ const sortMatchesByCss = (a, b) => {
 };
 
 const computeFragmentIndex = (ionType, fragLen, length, fragmentIndex) => {
+  const ionSeries = normalizeIonSeries(ionType);
   let index = fragmentIndex;
   if (!Number.isFinite(index)) {
-    if (ionType === 'b' || ionType === 'c') {
+    if (ionSeries === 'b' || ionSeries === 'c') {
       index = fragLen - 1;
-    } else if (ionType === 'y' || ionType === 'z') {
+    } else if (ionSeries === 'y' || ionSeries === 'z') {
       index = length - fragLen - 1;
     }
   }
@@ -1136,12 +1778,20 @@ const computeFragmentIndex = (ionType, fragLen, length, fragmentIndex) => {
   return Math.floor(index);
 };
 
+const getCoverageSourceRows = () => {
+  if (activeTableView === 'theoretical' && Array.isArray(theoreticalRows) && theoreticalRows.length) {
+    return getFilteredRawTheoreticalRows();
+  }
+  return coverageRows;
+};
+
 const buildCoverageGroups = (length) => {
   const limit = Math.max(length - 1, 0);
   const groupsByIonType = { b: [], c: [], y: [], z: [] };
   const groupMap = new Map();
+  const sourceRows = getCoverageSourceRows();
 
-  if (coverageRows === null) {
+  if (sourceRows === null) {
     for (let index = 0; index < limit; index += 1) {
       const demo = (ionType) => {
         const isNterm = ionType === 'b' || ionType === 'c';
@@ -1150,6 +1800,7 @@ const buildCoverageGroups = (length) => {
         const group = {
           key,
           ionType,
+          ionSeries: ionType,
           fragLen,
           index,
           matches: [
@@ -1175,21 +1826,22 @@ const buildCoverageGroups = (length) => {
     return { groupsByIonType, groupMap };
   }
 
-  coverageRows.forEach((row) => {
+  sourceRows.forEach((row) => {
     const { ionType, fragLen, fragmentIndex } = row;
-    if (!ionType || !Number.isFinite(fragLen) || fragLen <= 0 || fragLen >= length) {
+    const ionSeries = row.ionSeries || normalizeIonSeries(ionType);
+    if (!ionSeries || !Number.isFinite(fragLen) || fragLen <= 0 || fragLen >= length) {
       return;
     }
-    const index = computeFragmentIndex(ionType, fragLen, length, fragmentIndex);
+    const index = computeFragmentIndex(ionSeries, fragLen, length, fragmentIndex);
     if (!Number.isFinite(index) || index < 0 || index >= limit) {
       return;
     }
-    const key = `${ionType}:${fragLen}:${index}`;
+    const key = `${ionType || ionSeries}:${fragLen}:${index}`;
     let group = groupMap.get(key);
     if (!group) {
-      group = { key, ionType, fragLen, index, matches: [] };
+      group = { key, ionType: ionType || ionSeries, ionSeries, fragLen, index, matches: [] };
       groupMap.set(key, group);
-      groupsByIonType[ionType].push(group);
+      groupsByIonType[ionSeries].push(group);
     }
     group.matches.push({
       charge: row.charge,
@@ -1199,7 +1851,8 @@ const buildCoverageGroups = (length) => {
       anchorMz: row.anchorMz,
       anchorPpm: row.anchorPpm,
       label: row.label,
-      ionType,
+      ionType: ionType || ionSeries,
+      ionSeries,
       fragLen,
       theoryMz: row.theoryMz,
       theoryIntensity: row.theoryIntensity,
@@ -1496,7 +2149,18 @@ if (coveragePopover) {
 
 if (resultsTable) {
   resultsTable.addEventListener('click', handleResultsRowClick);
+  syncResultsTableControls();
 }
+
+if (visualsStack) {
+  applyVisualPanelOrder(loadVisualPanelOrder());
+}
+
+swapCoverageResultsButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    swapVisualPanels('coverage', 'results');
+  });
+});
 
 const buildFragShape = (positions, index, length, ionType, fragLenOverride) => {
   const step = positions[index + 1] - positions[index];

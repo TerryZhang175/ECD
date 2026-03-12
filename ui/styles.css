@@ -155,27 +155,33 @@ body::after {
 .layout {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  gap: 24px;
-  margin-top: 28px;
+  gap: 12px;
+  margin-top: 24px;
 }
 
 .controls,
 .visuals {
   display: grid;
-  gap: 20px;
+  gap: 12px;
+  align-content: start;
 }
 
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 18px;
+  padding: 8px 12px;
   box-shadow: var(--shadow);
   position: relative;
   animation: liftIn 700ms ease forwards;
   animation-delay: var(--delay, 0ms);
   opacity: 0;
   transform: translateY(16px);
+}
+
+.panel.is-swapped {
+  border-color: rgba(245, 158, 11, 0.85);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2), 0 28px 54px -30px rgba(245, 158, 11, 0.45);
 }
 
 .panel::after {
@@ -410,11 +416,11 @@ select {
   transition: transform 200ms ease;
 }
 
-.switch input:checked + .slider {
+.switch input:checked+.slider {
   background: rgba(59, 130, 246, 0.8);
 }
 
-.switch input:checked + .slider::after {
+.switch input:checked+.slider::after {
   transform: translateX(20px);
 }
 
@@ -441,7 +447,7 @@ select {
   pointer-events: none;
 }
 
-.chip input:checked + span {
+.chip input:checked+span {
   color: #ffffff;
   background: rgba(30, 64, 175, 0.9);
   padding: 4px 10px;
@@ -492,21 +498,21 @@ output {
   font-size: 12px;
 }
 
-.plot {
-  min-height: 320px;
-}
+
 
 .plot-panel .panel-body {
   padding: 0;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .results-panel .panel-body {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 450px;
+  border-bottom: 1px solid rgba(30, 64, 175, 0.1);
 }
 
 table {
@@ -516,10 +522,15 @@ table {
 }
 
 thead {
-  background: rgba(30, 64, 175, 0.08);
+  background: #f1f5f9;
+  /* Solid color for sticky header */
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 11px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 0 rgba(30, 64, 175, 0.1);
 }
 
 th,
@@ -653,11 +664,32 @@ details.panel .panel-body {
   padding: 0 18px 18px;
 }
 
+.collapsible {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.collapsible > summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.collapsible[open] > summary {
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+
 @keyframes liftIn {
   from {
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -691,6 +723,7 @@ details.panel .panel-body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {

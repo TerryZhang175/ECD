@@ -136,6 +136,24 @@ def theoretical_isodist_from_comp(comp: ms.Composition, charge: int) -> np.ndarr
     return dist[dist[:, 1] >= max_int * REL_INTENSITY_CUTOFF].copy()
 
 
+def print_envelope_peaks(z: int, state_label: str, dist: np.ndarray, anchor_idx: int) -> None:
+    """Print every theoretical peak and mark monoisotopic/anchor peaks."""
+    mono_idx = 0
+    print(f"    Peak list for z={z}+ [{state_label}]")
+    print("      idx        m/z         rel_int     flags")
+    for i in range(dist.shape[0]):
+        mz = float(dist[i, 0])
+        rel_int = float(dist[i, 1])
+        flags = []
+        if i == mono_idx:
+            flags.append("monoisotopic")
+        if i == anchor_idx:
+            flags.append("anchor")
+        flag_text = ",".join(flags) if flags else "-"
+        print(f"      {i:>3d}   {mz:>10.6f}   {rel_int:>10.6f}   {flag_text}")
+    print()
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 def main():
     residues = parse_custom_sequence(PEPTIDE)
@@ -183,14 +201,17 @@ def main():
 
             anchor_idx = 0 if ANCHOR_MODE.lower() == "monoisotopic" else int(np.argmax(dist[:, 1]))
             anchor_mz = float(dist[anchor_idx, 0])
+            mono_mz = float(dist[0, 0])
             mz_range = (float(dist[0, 0]), float(dist[-1, 0]))
 
             all_dists.append((z, state_label, dist))
 
             if state_label == "neutral":
-                print(f"  z={z:>2}+  anchor m/z = {anchor_mz:>12.4f}   "
+                print(f"  z={z:>2}+  mono m/z = {mono_mz:>12.4f}   "
+                      f"anchor m/z = {anchor_mz:>12.4f}   "
                       f"range [{mz_range[0]:.4f} – {mz_range[1]:.4f}]   "
                       f"peaks = {len(dist)}")
+            print_envelope_peaks(z, state_label, dist, anchor_idx)
 
     print()
     print(f"  Total theoretical envelopes: {len(all_dists)}")
