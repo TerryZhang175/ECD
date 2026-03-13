@@ -53,6 +53,14 @@ const theoreticalMode = document.getElementById('theoreticalMode');
 const theoreticalIonFilter = document.getElementById('theoreticalIonFilter');
 const theoreticalChargeFilter = document.getElementById('theoreticalChargeFilter');
 const resultsTable = document.getElementById('resultsTable');
+const resultsQualityPanel = document.getElementById('resultsQualityPanel');
+const resultsMinFit = document.getElementById('resultsMinFit');
+const resultsMaxInterference = document.getElementById('resultsMaxInterference');
+const resultsMinSnr = document.getElementById('resultsMinSnr');
+const resultsMaxMissingPeaks = document.getElementById('resultsMaxMissingPeaks');
+const resultsMaxMassErrorStd = document.getElementById('resultsMaxMassErrorStd');
+const resultsMinCorrelation = document.getElementById('resultsMinCorrelation');
+const resultsQualityReset = document.getElementById('resultsQualityReset');
 const ionTypeChips = Array.from(document.querySelectorAll('.chip-group .chip'));
 const visualsStack = document.getElementById('visualsStack');
 const swapCoverageResultsButtons = Array.from(document.querySelectorAll('[data-swap-coverage-results]'));
@@ -67,6 +75,7 @@ let theoreticalRows = [];
 let theoreticalDisplayRows = [];
 let activeTableView = 'results';
 let tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
+let resultsQualityFiltersSupported = false;
 let manualFilePathOverride = false;
 let coverageGroupMap = new Map();
 let coveragePopoverHideTimer = null;
@@ -229,6 +238,67 @@ const formatCleavageLabel = (row) => {
   return `${leftPos}|${rightPos}`;
 };
 
+const parseOptionalNumber = (value) => {
+  if (value == null) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+};
+
+const getResultsQualityFilterState = () => ({
+  minFit: parseOptionalNumber(resultsMinFit?.value),
+  maxInterference: parseOptionalNumber(resultsMaxInterference?.value),
+  minSnr: parseOptionalNumber(resultsMinSnr?.value),
+  maxMissingPeaks: parseOptionalNumber(resultsMaxMissingPeaks?.value),
+  maxMassErrorStd: parseOptionalNumber(resultsMaxMassErrorStd?.value),
+  minCorrelation: parseOptionalNumber(resultsMinCorrelation?.value),
+});
+
+const hasActiveResultsQualityFilters = () => {
+  const state = getResultsQualityFilterState();
+  return Object.values(state).some((value) => Number.isFinite(value));
+};
+
+const formatMetricForTitle = (label, value, digits = 3) => (
+  Number.isFinite(value) ? `${label}=${Number(value).toFixed(digits)}` : `${label}=--`
+);
+
+const buildResultsRowTitle = (frag) => {
+  const parts = [
+    formatMetricForTitle('fit', frag.fitScore, 3),
+    formatMetricForTitle('interference', frag.interference, 3),
+    formatMetricForTitle('S/N', frag.s2n, 2),
+    formatMetricForTitle('missing%', frag.pcMissingPeaks, 1),
+    formatMetricForTitle('std ppm', frag.massErrorStd, 3),
+    formatMetricForTitle('corr', frag.correlationCoefficient, 3),
+    formatMetricForTitle('chisq', frag.chisqStat, 3),
+  ];
+  return parts.join(' | ');
+};
+
+const getResultsQualityDataAttrs = (frag) => {
+  const attrs = [];
+  const metrics = {
+    'fit-score': frag.fitScore,
+    interference: frag.interference,
+    snr: frag.s2n,
+    'missing-peaks': frag.pcMissingPeaks,
+    'mass-error-std': frag.massErrorStd,
+    correlation: frag.correlationCoefficient,
+  };
+  Object.entries(metrics).forEach(([key, value]) => {
+    if (Number.isFinite(value)) {
+      attrs.push(` data-${key}="${escapeHtml(String(value))}"`);
+    }
+  });
+  return attrs.join('');
+};
+
 const syncResultsTableControls = () => {
   if (!resultsTable) {
     return;
@@ -256,6 +326,9 @@ const syncResultsTableControls = () => {
   }
   if (theoreticalChargeFilter) {
     theoreticalChargeFilter.hidden = !showTheoreticalFilters;
+  }
+  if (resultsQualityPanel) {
+    resultsQualityPanel.hidden = showTheoreticalFilters || !resultsQualityFiltersSupported;
   }
 };
 
@@ -659,6 +732,8 @@ const updateResultsTable = (fragments) => {
         : '';
       const hasTheory = Array.isArray(frag.theoryMz) && frag.theoryMz.length;
       const theoryAttr = hasTheory ? ' data-has-theory="1"' : '';
+      const qualityAttr = !isTheoreticalRow ? getResultsQualityDataAttrs(frag) : '';
+      const titleAttr = !isTheoreticalRow ? ` title="${escapeHtml(buildResultsRowTitle(frag))}"` : '';
       const sortAttrs =
         ` data-sort-score="${escapeHtml(sortDataset.score)}"` +
         ` data-sort-mz="${escapeHtml(sortDataset.mz)}"` +
@@ -666,7 +741,7 @@ const updateResultsTable = (fragments) => {
       const cells = config.columns
         .map((column) => `<td>${escapeHtml(viewModel.cells[column.key] ?? '')}</td>`)
         .join('');
-      return `<tr${centerAttr}${matchAttr}${theoryAttr}${sortAttrs}>${cells}</tr>`;
+      return `<tr${centerAttr}${matchAttr}${theoryAttr}${qualityAttr}${sortAttrs}${titleAttr}>${cells}</tr>`;
     })
     .join('');
   activeResultRow = null;
@@ -851,6 +926,13 @@ const getTheoreticalTableRows = () => {
 
 const setCoverageRows = (rows, theoreticalOverride = null) => {
   coverageRows = Array.isArray(rows) ? rows : [];
+  resultsQualityFiltersSupported = coverageRows.some((row) => (
+    Number.isFinite(row?.fitScore) ||
+    Number.isFinite(row?.interference) ||
+    Number.isFinite(row?.s2n) ||
+    Number.isFinite(row?.pcMissingPeaks) ||
+    Number.isFinite(row?.massErrorStd)
+  ));
   if (Array.isArray(theoreticalOverride) && theoreticalOverride.length) {
     theoreticalRows = normalizeTheoreticalRows(theoreticalOverride);
   } else {
@@ -859,6 +941,7 @@ const setCoverageRows = (rows, theoreticalOverride = null) => {
   theoreticalDisplayRows = buildTheoreticalDisplayRows(theoreticalRows);
   syncTheoreticalIonFilterOptions();
   syncTheoreticalChargeFilterOptions();
+  syncResultsTableControls();
   const tableData = activeTableView === 'theoretical' ? getTheoreticalTableRows() : coverageRows;
   updateResultsTable(tableData);
 };
@@ -873,8 +956,24 @@ const applyFragments = (fragments, sequence, mode = 'fragments', theoreticalFrag
     obsMz: frag.obs_mz,
     obsInt: frag.obs_int,
     css: frag.css,
+    score: frag.score,
     anchorMz: frag.anchor_theory_mz,
     anchorPpm: frag.anchor_ppm,
+    coverage: frag.coverage,
+    ppmRmse: frag.ppm_rmse,
+    matchCount: frag.match_count,
+    interference: frag.interference,
+    fitScore: frag.fit_score,
+    s2n: frag.s2n,
+    logS2n: frag.log_s2n,
+    numMissingPeaks: frag.num_missing_peaks,
+    pcMissingPeaks: frag.pc_missing_peaks,
+    massErrorStd: frag.mass_error_std,
+    correlationCoefficient: frag.correlation_coefficient,
+    chisqStat: frag.chisq_stat,
+    unexplainedFraction: frag.unexplained_fraction,
+    coreCoverage: frag.core_coverage,
+    missingCoreFraction: frag.missing_core_fraction,
     label: frag.label,
     theoryMz: Array.isArray(frag.theory_mz) ? frag.theory_mz : [],
     theoryIntensity: Array.isArray(frag.theory_intensity) ? frag.theory_intensity : [],
@@ -1413,13 +1512,73 @@ cosineSlider.addEventListener('input', () => {
 
 const applyTableFilter = () => {
   const query = resultsFilter.value.trim().toLowerCase();
+  const qualityFilters = getResultsQualityFilterState();
+  const applyQualityFilters = activeTableView === 'results' && resultsQualityFiltersSupported && hasActiveResultsQualityFilters();
   tableRows.forEach((row) => {
-    const matches = row.textContent.toLowerCase().includes(query);
-    row.style.display = matches ? '' : 'none';
+    const matchesText = row.textContent.toLowerCase().includes(query);
+    let matchesQuality = true;
+    if (applyQualityFilters) {
+      const fitScore = parseOptionalNumber(row.dataset.fitScore);
+      const interference = parseOptionalNumber(row.dataset.interference);
+      const snr = parseOptionalNumber(row.dataset.snr);
+      const missingPeaks = parseOptionalNumber(row.dataset.missingPeaks);
+      const massErrorStd = parseOptionalNumber(row.dataset.massErrorStd);
+      const correlation = parseOptionalNumber(row.dataset.correlation);
+      if (Number.isFinite(qualityFilters.minFit)) {
+        matchesQuality = matchesQuality && Number.isFinite(fitScore) && fitScore >= qualityFilters.minFit;
+      }
+      if (Number.isFinite(qualityFilters.maxInterference)) {
+        matchesQuality = matchesQuality && Number.isFinite(interference) && interference <= qualityFilters.maxInterference;
+      }
+      if (Number.isFinite(qualityFilters.minSnr)) {
+        matchesQuality = matchesQuality && Number.isFinite(snr) && snr >= qualityFilters.minSnr;
+      }
+      if (Number.isFinite(qualityFilters.maxMissingPeaks)) {
+        matchesQuality = matchesQuality && Number.isFinite(missingPeaks) && missingPeaks <= qualityFilters.maxMissingPeaks;
+      }
+      if (Number.isFinite(qualityFilters.maxMassErrorStd)) {
+        matchesQuality = matchesQuality && Number.isFinite(massErrorStd) && massErrorStd <= qualityFilters.maxMassErrorStd;
+      }
+      if (Number.isFinite(qualityFilters.minCorrelation)) {
+        matchesQuality = matchesQuality && Number.isFinite(correlation) && correlation >= qualityFilters.minCorrelation;
+      }
+    }
+    row.style.display = matchesText && matchesQuality ? '' : 'none';
   });
 };
 
 resultsFilter.addEventListener('input', applyTableFilter);
+
+[
+  resultsMinFit,
+  resultsMaxInterference,
+  resultsMinSnr,
+  resultsMaxMissingPeaks,
+  resultsMaxMassErrorStd,
+  resultsMinCorrelation,
+].forEach((input) => {
+  if (input) {
+    input.addEventListener('input', applyTableFilter);
+  }
+});
+
+if (resultsQualityReset) {
+  resultsQualityReset.addEventListener('click', () => {
+    [
+      resultsMinFit,
+      resultsMaxInterference,
+      resultsMinSnr,
+      resultsMaxMissingPeaks,
+      resultsMaxMassErrorStd,
+      resultsMinCorrelation,
+    ].forEach((input) => {
+      if (input) {
+        input.value = '';
+      }
+    });
+    applyTableFilter();
+  });
+}
 
 if (resultsView) {
   resultsView.addEventListener('change', () => {

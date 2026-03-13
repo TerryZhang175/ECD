@@ -105,6 +105,133 @@ def _find_most_intense_window(
     }
 
 
+def _build_noise_level_model(
+    spectrum_mz: np.ndarray,
+    spectrum_int: np.ndarray,
+    *,
+    num_splits: int,
+    hist_bins: int,
+) -> dict:
+    spectrum_mz = np.asarray(spectrum_mz, dtype=float)
+    spectrum_int = np.asarray(spectrum_int, dtype=float)
+    positive = spectrum_int[np.isfinite(spectrum_int) & (spectrum_int > 0)]
+    fallback = float(np.median(positive)) if positive.size else 0.0
+    if spectrum_mz.size == 0 or spectrum_int.size == 0:
+        return {"coeffs": None, "fallback": fallback}
+
+    split_count = max(1, int(num_splits))
+    split_size = max(1, int(np.ceil(spectrum_mz.size / split_count)))
+    avg_mz: list[float] = []
+    modal_intens: list[float] = []
+
+    for start in range(0, spectrum_mz.size, split_size):
+        stop = min(start + split_size, spectrum_mz.size)
+        chunk_mz = spectrum_mz[start:stop]
+        chunk_int = spectrum_int[start:stop]
+        chunk_int = chunk_int[np.isfinite(chunk_int) & (chunk_int > 0)]
+        if chunk_mz.size == 0 or chunk_int.size == 0:
+            continue
+        if np.allclose(chunk_int, chunk_int[0]):
+            mode_value = float(chunk_int[0])
+        else:
+            bins = max(8, min(int(hist_bins), int(chunk_int.size)))
+            hist, edges = np.histogram(chunk_int, bins=bins)
+            mode_idx = int(np.argmax(hist))
+            mode_value = float((edges[mode_idx] + edges[mode_idx + 1]) / 2.0)
+        avg_mz.append(float(np.mean(chunk_mz)))
+        modal_intens.append(mode_value)
+
+    if not modal_intens:
+        return {"coeffs": None, "fallback": fallback}
+
+    fallback = float(np.median(modal_intens))
+    coeffs = None
+    if len(avg_mz) >= 2:
+        deg = 2 if len(avg_mz) >= 3 else 1
+        try:
+            coeffs = np.polyfit(np.asarray(avg_mz, dtype=float), np.asarray(modal_intens, dtype=float), deg)
+        except Exception:
+            coeffs = None
+    return {"coeffs": coeffs, "fallback": fallback}
+
+
+def _evaluate_noise_level(model: dict | None, mz: float) -> float:
+    fallback = 0.0
+    if isinstance(model, dict):
+        try:
+            fallback = float(model.get("fallback", 0.0) or 0.0)
+        except Exception:
+            fallback = 0.0
+        coeffs = model.get("coeffs")
+        if coeffs is not None:
+            try:
+                level = float(np.polyval(np.asarray(coeffs, dtype=float), float(mz)))
+                if np.isfinite(level) and level > 0:
+                    return max(level, fallback, 1e-12)
+            except Exception:
+                pass
+    return max(fallback, 1e-12)
+
+
+def _scale_theoretical_to_observed(theory_int: np.ndarray, obs_int: np.ndarray) -> tuple[np.ndarray, float]:
+    theory = np.asarray(theory_int, dtype=float)
+    obs = np.asarray(obs_int, dtype=float)
+    denom = float(np.dot(theory, theory))
+    if not np.isfinite(denom) or denom <= 0.0:
+        return theory.copy(), 1.0
+    scale = float(np.dot(theory, obs) / denom)
+    if not np.isfinite(scale) or scale < 0.0:
+        scale = 0.0
+    return theory * scale, scale
+
+
+def _fit_score_from_envelope(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+    total_theory = float(np.sum(theory))
+    if theory.size == 0 or total_theory <= 0.0:
+        return 0.0
+    numerator = 0.0
+    for idx, theo_value in enumerate(theory):
+        theo = float(theo_value)
+        if theo <= 0.0:
+            continue
+        exp = float(obs[idx]) if idx < obs.size else 0.0
+        if exp <= 0.0:
+            ratio = 0.0
+        else:
+            ratio = min(theo / exp, exp / theo)
+        numerator += ratio * theo
+    return float(np.clip(numerator / total_theory, 0.0, 1.0))
+
+
+def _safe_pearson(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+    if obs.size < 2 or theory.size < 2:
+        return 0.0
+    if float(np.std(obs)) <= 0.0 or float(np.std(theory)) <= 0.0:
+        return 0.0
+    corr = np.corrcoef(obs, theory)[0, 1]
+    if not np.isfinite(corr):
+        return 0.0
+    return float(np.clip(corr, -1.0, 1.0))
+
+
+def _chisq_statistic(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+    obs_sum = float(np.sum(obs))
+    theory_sum = float(np.sum(theory))
+    if obs.size == 0 or theory.size == 0 or obs_sum <= 0.0 or theory_sum <= 0.0:
+        return float("inf")
+    obs_norm = obs / obs_sum
+    theory_norm = theory / theory_sum
+    expected = np.clip(theory_norm, 1e-12, None)
+    stat = float(np.sum(((obs_norm - theory_norm) ** 2) / expected))
+    return stat if np.isfinite(stat) else float("inf")
+
+
 def run_precursor_headless(
     residues,
     spectrum,
@@ -948,13 +1075,24 @@ def _composite_match_components(
 
 def _fragment_noise_core_components(
     *,
+    spectrum_mz: np.ndarray,
+    spectrum_int: np.ndarray,
     local: np.ndarray,
     matches: list[dict],
     dist_shifted: np.ndarray,
     core_top_n: int,
     base_score: float,
+    ppm_sigma: float,
+    anchor_mz: float,
+    noise_model: dict | None,
+    score_w_fit: float,
+    score_w_correlation: float,
+    score_w_snr: float,
+    s2n_scale: float,
     penalty_unexplained: float,
     penalty_missing_core: float,
+    penalty_missing_peaks: float,
+    penalty_mass_error_std: float,
 ) -> dict:
     local_int = np.asarray(local[:, 1], dtype=float) if isinstance(local, np.ndarray) and local.size else np.asarray([], dtype=float)
     local_total = float(np.sum(local_int)) if local_int.size else 0.0
@@ -992,14 +1130,89 @@ def _fragment_noise_core_components(
         core_coverage = 0.0
     missing_core_fraction = float(np.clip(1.0 - core_coverage, 0.0, 1.0))
 
-    evidence_score = float(base_score) - (float(penalty_unexplained) * unexplained_fraction) - (
-        float(penalty_missing_core) * missing_core_fraction
+    total_theory_peaks = int(theory_int.size)
+    matched_by_theory_idx = {
+        int(r.get("theory_idx")): r
+        for r in matches
+        if r.get("theory_idx") is not None and int(r.get("theory_idx")) >= 0
+    }
+    obs_aligned = np.zeros(total_theory_peaks, dtype=float)
+    matched_bool = np.zeros(total_theory_peaks, dtype=int)
+    for theory_idx, row in matched_by_theory_idx.items():
+        if 0 <= theory_idx < total_theory_peaks:
+            obs_aligned[theory_idx] = max(float(row.get("obs_int", 0.0)), 0.0)
+            matched_bool[theory_idx] = 1
+
+    num_missing_peaks = max(total_theory_peaks - int(np.sum(matched_bool)), 0)
+    pc_missing_peaks = float((num_missing_peaks / total_theory_peaks) * 100.0) if total_theory_peaks > 0 else 100.0
+
+    scaled_theory, theory_scale = _scale_theoretical_to_observed(theory_int, obs_aligned)
+    fit_score = _fit_score_from_envelope(obs_aligned, scaled_theory)
+    correlation_coefficient = _safe_pearson(obs_aligned, scaled_theory)
+    chisq_stat = _chisq_statistic(obs_aligned, scaled_theory)
+
+    if matches:
+        residual_ppm = np.asarray([float(r.get("residual_ppm", 0.0)) for r in matches], dtype=float)
+        mass_error_std = float(np.std(residual_ppm)) if residual_ppm.size else float("inf")
+    else:
+        mass_error_std = float("inf")
+
+    mz_min = float(np.min(dist_shifted[:, 0])) if isinstance(dist_shifted, np.ndarray) and dist_shifted.size else float(anchor_mz)
+    mz_max = float(np.max(dist_shifted[:, 0])) if isinstance(dist_shifted, np.ndarray) and dist_shifted.size else float(anchor_mz)
+    env_mask = (np.asarray(spectrum_mz, dtype=float) >= mz_min) & (np.asarray(spectrum_mz, dtype=float) <= mz_max)
+    env_total_signal = float(np.sum(np.asarray(spectrum_int, dtype=float)[env_mask])) if np.any(env_mask) else 0.0
+    target_signal = float(np.sum(obs_aligned))
+    if env_total_signal > 0.0:
+        interference = float(np.clip(1.0 - (target_signal / env_total_signal), 0.0, 1.0))
+    else:
+        interference = float(unexplained_fraction)
+
+    local_noise = _evaluate_noise_level(noise_model, float(anchor_mz))
+    if local_int.size:
+        try:
+            local_q = float(np.quantile(local_int, 0.20))
+            if np.isfinite(local_q) and local_q > 0:
+                local_noise = max(local_noise, local_q)
+        except Exception:
+            pass
+    max_signal = float(np.max(obs_aligned)) if obs_aligned.size else (float(np.max(local_int)) if local_int.size else 0.0)
+    s2n = float(max_signal / local_noise) if local_noise > 0.0 else float("inf")
+    log_s2n = float(np.log10(max(s2n, 1e-12))) if np.isfinite(s2n) and s2n > 0.0 else float("-inf")
+
+    fit_bonus = float(score_w_fit) * float(np.clip(fit_score, 0.0, 1.0))
+    correlation_bonus = float(score_w_correlation) * float(np.clip((correlation_coefficient + 1.0) / 2.0, 0.0, 1.0))
+    s2n_scale_val = max(float(s2n_scale), 1e-6)
+    s2n_score = 1.0 if not np.isfinite(s2n) else float(1.0 - np.exp(-max(s2n, 0.0) / s2n_scale_val))
+    s2n_bonus = float(score_w_snr) * float(np.clip(s2n_score, 0.0, 1.0))
+    ppm_sigma_val = max(float(ppm_sigma), 1e-6)
+    mass_error_penalty = 1.0 if not np.isfinite(mass_error_std) else float(1.0 - np.exp(-max(mass_error_std, 0.0) / ppm_sigma_val))
+
+    evidence_score = (
+        float(base_score)
+        + fit_bonus
+        + correlation_bonus
+        + s2n_bonus
+        - (float(penalty_unexplained) * unexplained_fraction)
+        - (float(penalty_missing_core) * missing_core_fraction)
+        - (float(penalty_missing_peaks) * (pc_missing_peaks / 100.0))
+        - (float(penalty_mass_error_std) * mass_error_penalty)
     )
     return {
         "local_explained_fraction": float(local_explained_fraction),
         "unexplained_fraction": float(unexplained_fraction),
         "core_coverage": float(core_coverage),
         "missing_core_fraction": float(missing_core_fraction),
+        "interference": float(interference),
+        "num_missing_peaks": int(num_missing_peaks),
+        "pc_missing_peaks": float(pc_missing_peaks),
+        "fit_score": float(fit_score),
+        "correlation_coefficient": float(correlation_coefficient),
+        "chisq_stat": float(chisq_stat),
+        "mass_error_std": float(mass_error_std),
+        "noise_level": float(local_noise),
+        "s2n": float(s2n),
+        "log_s2n": float(log_s2n),
+        "theory_scale": float(theory_scale),
         "evidence_score": float(evidence_score),
     }
 
@@ -1565,12 +1778,25 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
     max_residual_rmse_ppm = (
         float(max_residual_rmse_cfg) if max_residual_rmse_cfg is not None else float(match_tol_ppm)
     )
+    max_mass_error_std_cfg = getattr(cfg, "FRAG_MAX_MASS_ERROR_STD_PPM", None)
+    max_mass_error_std_ppm = float(max_mass_error_std_cfg) if max_mass_error_std_cfg is not None else None
     ppm_sigma_cfg = getattr(cfg, "FRAG_PPM_SIGMA", None)
     ppm_sigma = float(ppm_sigma_cfg) if ppm_sigma_cfg is not None else float(match_tol_ppm)
     if ppm_sigma <= 0:
         ppm_sigma = max(match_tol_ppm, 1.0)
     spacing_sigma_cfg = getattr(cfg, "FRAG_SPACING_SIGMA_DA", None)
     core_top_n = max(1, int(getattr(cfg, "FRAG_CORE_TOP_N", 3)))
+    min_s2n = float(getattr(cfg, "FRAG_MIN_S2N", 2.0))
+    max_interference = float(getattr(cfg, "FRAG_MAX_INTERFERENCE", 0.85))
+    max_pc_missing_peaks = float(getattr(cfg, "FRAG_MAX_PC_MISSING_PEAKS", 85.0))
+    min_fit_score = float(getattr(cfg, "FRAG_MIN_FIT_SCORE", 0.35))
+    min_correlation_cfg = getattr(cfg, "FRAG_MIN_CORRELATION", None)
+    min_correlation = float(min_correlation_cfg) if min_correlation_cfg is not None else None
+    max_chisq_cfg = getattr(cfg, "FRAG_MAX_CHISQ_STAT", None)
+    max_chisq_stat = float(max_chisq_cfg) if max_chisq_cfg is not None else None
+    noise_model_splits = max(4, int(getattr(cfg, "FRAG_NOISE_MODEL_SPLITS", 50)))
+    noise_hist_bins = max(16, int(getattr(cfg, "FRAG_NOISE_HIST_BINS", 128)))
+    s2n_score_scale = max(float(getattr(cfg, "FRAG_S2N_SCORE_SCALE", 4.0)), 1e-6)
     max_unexplained_frac = float(getattr(cfg, "FRAG_MAX_UNEXPLAINED_FRAC", 0.70))
     max_missing_core_frac = float(getattr(cfg, "FRAG_MAX_MISSING_CORE_FRAC", 0.40))
     score_w_css = float(getattr(cfg, "FRAG_SCORE_W_CSS", 0.40))
@@ -1578,17 +1804,41 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
     score_w_ppm = float(getattr(cfg, "FRAG_SCORE_W_PPM", 0.15))
     score_w_spacing = float(getattr(cfg, "FRAG_SCORE_W_SPACING", 0.10))
     score_w_intensity = float(getattr(cfg, "FRAG_SCORE_W_INTENSITY", 0.15))
-    score_w_sum = score_w_css + score_w_cov + score_w_ppm + score_w_spacing + score_w_intensity
+    score_w_fit = float(getattr(cfg, "FRAG_SCORE_W_FIT", 0.10))
+    score_w_correlation = float(getattr(cfg, "FRAG_SCORE_W_CORRELATION", 0.05))
+    score_w_snr = float(getattr(cfg, "FRAG_SCORE_W_SNR", 0.05))
+    score_w_sum = (
+        score_w_css
+        + score_w_cov
+        + score_w_ppm
+        + score_w_spacing
+        + score_w_intensity
+        + score_w_fit
+        + score_w_correlation
+        + score_w_snr
+    )
     if score_w_sum <= 0:
         score_w_css, score_w_cov, score_w_ppm, score_w_spacing, score_w_intensity = 0.40, 0.20, 0.15, 0.10, 0.15
+        score_w_fit, score_w_correlation, score_w_snr = 0.10, 0.05, 0.05
     else:
         score_w_css /= score_w_sum
         score_w_cov /= score_w_sum
         score_w_ppm /= score_w_sum
         score_w_spacing /= score_w_sum
         score_w_intensity /= score_w_sum
+        score_w_fit /= score_w_sum
+        score_w_correlation /= score_w_sum
+        score_w_snr /= score_w_sum
     score_penalty_unexplained = float(getattr(cfg, "FRAG_SCORE_PENALTY_UNEXPLAINED", 0.35))
     score_penalty_missing_core = float(getattr(cfg, "FRAG_SCORE_PENALTY_MISSING_CORE", 0.25))
+    score_penalty_missing_peaks = float(getattr(cfg, "FRAG_SCORE_PENALTY_MISSING_PEAKS", 0.10))
+    score_penalty_mass_error_std = float(getattr(cfg, "FRAG_SCORE_PENALTY_MASS_ERROR_STD", 0.10))
+    noise_model = _build_noise_level_model(
+        spectrum_mz,
+        spectrum_int,
+        num_splits=int(noise_model_splits),
+        hist_bins=int(noise_hist_bins),
+    )
 
     ion_colors = {
         "b": "tab:blue",
@@ -1899,13 +2149,24 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     score_w_intensity=float(score_w_intensity),
                 )
                 quality = _fragment_noise_core_components(
+                    spectrum_mz=spectrum_mz,
+                    spectrum_int=spectrum_int,
                     local=local_centroids,
                     matches=local_matches,
-                    dist_shifted=dist_model,
+                    dist_shifted=dist_plot,
                     core_top_n=int(core_top_n),
                     base_score=float(comp["composite_score"]),
+                    ppm_sigma=float(ppm_sigma),
+                    anchor_mz=float(obs_mz),
+                    noise_model=noise_model,
+                    score_w_fit=float(score_w_fit),
+                    score_w_correlation=float(score_w_correlation),
+                    score_w_snr=float(score_w_snr),
+                    s2n_scale=float(s2n_score_scale),
                     penalty_unexplained=float(score_penalty_unexplained),
                     penalty_missing_core=float(score_penalty_missing_core),
+                    penalty_missing_peaks=float(score_penalty_missing_peaks),
+                    penalty_mass_error_std=float(score_penalty_mass_error_std),
                 )
 
                 accepted = bool(
@@ -1913,11 +2174,21 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     and abs(float(ppm)) <= float(max_anchor_abs_ppm)
                     and len(local_matches) >= int(min_matched_peaks)
                     and float(comp["coverage"]) >= float(min_coverage)
+                    and float(quality["s2n"]) >= float(min_s2n)
+                    and float(quality["interference"]) <= float(max_interference)
+                    and float(quality["pc_missing_peaks"]) <= float(max_pc_missing_peaks)
+                    and float(quality["fit_score"]) >= float(min_fit_score)
                     and float(quality["unexplained_fraction"]) <= float(max_unexplained_frac)
                     and float(quality["missing_core_fraction"]) <= float(max_missing_core_frac)
                 )
                 if len(local_matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
                     accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
+                if max_mass_error_std_ppm is not None and np.isfinite(float(quality["mass_error_std"])):
+                    accepted = accepted and float(quality["mass_error_std"]) <= float(max_mass_error_std_ppm)
+                if min_correlation is not None and np.isfinite(float(quality["correlation_coefficient"])):
+                    accepted = accepted and float(quality["correlation_coefficient"]) >= float(min_correlation)
+                if max_chisq_stat is not None and np.isfinite(float(quality["chisq_stat"])):
+                    accepted = accepted and float(quality["chisq_stat"]) <= float(max_chisq_stat)
                 if not accepted:
                     return None
 
@@ -1963,6 +2234,16 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "unexplained_fraction": float(quality["unexplained_fraction"]),
                     "core_coverage": float(quality["core_coverage"]),
                     "missing_core_fraction": float(quality["missing_core_fraction"]),
+                    "interference": float(quality["interference"]),
+                    "num_missing_peaks": int(quality["num_missing_peaks"]),
+                    "pc_missing_peaks": float(quality["pc_missing_peaks"]),
+                    "fit_score": float(quality["fit_score"]),
+                    "correlation_coefficient": float(quality["correlation_coefficient"]),
+                    "chisq_stat": float(quality["chisq_stat"]),
+                    "mass_error_std": float(quality["mass_error_std"]),
+                    "noise_level": float(quality["noise_level"]),
+                    "s2n": float(quality["s2n"]),
+                    "log_s2n": float(quality["log_s2n"]),
                     "h_weights": best_weights,
                     "dist": dist_plot,
                     "label": label,
@@ -2108,6 +2389,8 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 f"anchor={m['anchor_theory_mz']:.4f}->{m['obs_mz']:.4f}\t"
                 f"cov={float(m.get('coverage', 0.0)):.3f}\t"
                 f"unexp={float(m.get('unexplained_fraction', 0.0)):.3f}\t"
+                f"fit={float(m.get('fit_score', 0.0)):.3f}\t"
+                f"s2n={float(m.get('s2n', 0.0)):.2f}\t"
                 f"rawcos={m['raw_score']:.3f}"
             )
 
@@ -2164,8 +2447,18 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         "match_count": m.get("match_count", ""),
                         "local_explained_fraction": m.get("local_explained_fraction", ""),
                         "unexplained_fraction": m.get("unexplained_fraction", ""),
+                        "interference": m.get("interference", ""),
                         "core_coverage": m.get("core_coverage", ""),
                         "missing_core_fraction": m.get("missing_core_fraction", ""),
+                        "num_missing_peaks": m.get("num_missing_peaks", ""),
+                        "pc_missing_peaks": m.get("pc_missing_peaks", ""),
+                        "fit_score": m.get("fit_score", ""),
+                        "correlation_coefficient": m.get("correlation_coefficient", ""),
+                        "chisq_stat": m.get("chisq_stat", ""),
+                        "mass_error_std": m.get("mass_error_std", ""),
+                        "noise_level": m.get("noise_level", ""),
+                        "s2n": m.get("s2n", ""),
+                        "log_s2n": m.get("log_s2n", ""),
                         "w0": h.get("0", ""),
                         "w_plusH": h.get("+H", ""),
                         "w_plus2H": h.get("+2H", ""),
@@ -2246,8 +2539,18 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "match_count",
                     "local_explained_fraction",
                     "unexplained_fraction",
+                    "interference",
                     "core_coverage",
                     "missing_core_fraction",
+                    "num_missing_peaks",
+                    "pc_missing_peaks",
+                    "fit_score",
+                    "correlation_coefficient",
+                    "chisq_stat",
+                    "mass_error_std",
+                    "noise_level",
+                    "s2n",
+                    "log_s2n",
                     "w0",
                     "w_plusH",
                     "w_plus2H",
