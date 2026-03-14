@@ -1846,6 +1846,26 @@ if (spectrumZoomButton) {
   });
 }
 
+const ZOOM_STEP_FACTOR = 1.5;
+
+const zoomStep = (direction) => {
+  const specDiv = document.getElementById('spectrumPlot');
+  if (!specDiv || !specDiv.layout) return;
+  const xRange = specDiv.layout.xaxis && specDiv.layout.xaxis.range;
+  if (!Array.isArray(xRange) || xRange.length !== 2) return;
+  const center = (xRange[0] + xRange[1]) / 2;
+  const currentWidth = xRange[1] - xRange[0];
+  const newWidth = direction === 'in'
+    ? Math.max(currentWidth / ZOOM_STEP_FACTOR, 2)
+    : currentWidth * ZOOM_STEP_FACTOR;
+  zoomSpectrumToRange(Math.max(center - newWidth / 2, 0), center + newWidth / 2);
+};
+
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomStep('in'));
+if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomStep('out'));
+
 const sanitizeSequence = (value) => {
   const cleaned = value.toUpperCase().replace(/[^A-Z]/g, '');
   return cleaned.length ? cleaned : 'PEPTIDE';

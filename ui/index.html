@@ -5,9 +5,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ECD Analyzer UI</title>
-  <link rel="stylesheet" href="styles.css?v=20260313-2" />
+  <link rel="stylesheet" href="styles.css?v=20260314-1" />
   <script defer src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-  <script defer src="app.js?v=20260313-2"></script>
+  <script defer src="app.js?v=20260314-1"></script>
 </head>
 
 <body>
@@ -382,6 +382,10 @@
             <div class="panel-actions">
               <button class="button ghost" id="spectrumResetButton" type="button">Reset view</button>
               <button class="button ghost" id="spectrumZoomButton" type="button">Zoom precursor</button>
+              <div class="zoom-width-group">
+                <button class="button ghost zoom-step-btn" id="zoomInBtn" type="button" title="Zoom in (narrower window)">+</button>
+                <button class="button ghost zoom-step-btn" id="zoomOutBtn" type="button" title="Zoom out (wider window)">−</button>
+              </div>
             </div>
           </div>
           <div class="panel-body">
