@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Q10R Truth-Score FN Atlas</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="data.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Q10R static report</p>
+          <h1>Truth-Score FN Atlas</h1>
+          <p class="hero-text">
+            A standalone visual board for Q10R <code>b</code>/<code>c</code> ions that remain false negatives under the current simplified fragments gate plus <code>truth_score@0.80</code>. Each card pairs the manual true ion with a diagnose snapshot and the current fragments-side reject checks.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-block">
+            <span class="meta-label">diagnose mode</span>
+            <span class="meta-value">h_transfer = 0</span>
+          </div>
+          <div class="meta-block">
+            <span class="meta-label">report build</span>
+            <span class="meta-value" id="generatedAt">pending</span>
+          </div>
+          <div class="meta-block">
+            <span class="meta-label">source</span>
+            <span class="meta-value">truth-score FN set</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="summary-grid" id="summaryGrid"></section>
+
+      <section class="toolbar">
+        <label class="control">
+          <span>Search ion</span>
+          <input id="searchInput" type="search" placeholder="c36, RE45, top peaks, coverage, raw only..." />
+        </label>
+        <label class="control">
+          <span>RE filter</span>
+          <select id="reFilter"></select>
+        </label>
+        <label class="control">
+          <span>Ion series</span>
+          <select id="ionFilter">
+            <option value="all">All</option>
+            <option value="b">b</option>
+            <option value="c">c</option>
+          </select>
+        </label>
+        <label class="toggle">
+          <input id="recurringOnly" type="checkbox" />
+          <span>Recurring only</span>
+        </label>
+        <div class="review-legend" id="reviewLegend" aria-live="polite"></div>
+      </section>
+
+      <section class="content-grid">
+        <aside class="sidebar">
+          <section class="sidebar-panel">
+            <div class="panel-head">
+              <h2>Recurring FN</h2>
+              <span class="panel-note">normalized by ion + position + charge</span>
+            </div>
+            <div id="recurringList" class="stack-list"></div>
+          </section>
+          <section class="sidebar-panel">
+            <div class="panel-head">
+              <h2>Fragments Reject Gates</h2>
+              <span class="panel-note">aggregated fragments-side red check counts</span>
+            </div>
+            <div id="reasonList" class="stack-list"></div>
+          </section>
+          <section class="sidebar-panel">
+            <div class="panel-head">
+              <h2>RE loadout</h2>
+              <span class="panel-note">FN rows per scan</span>
+            </div>
+            <div id="reList" class="stack-list"></div>
+          </section>
+        </aside>
+
+        <main class="gallery">
+          <div class="gallery-head">
+            <div>
+              <p class="eyebrow">diagnose gallery</p>
+              <h2>False negatives</h2>
+            </div>
+            <div class="result-count" id="resultCount"></div>
+          </div>
+          <div class="card-grid" id="cardGrid"></div>
+          <div class="empty-state" id="emptyState" hidden>
+            <p>No cards match the current filters.</p>
+          </div>
+        </main>
+      </section>
+    </div>
+
+    <dialog id="viewer">
+      <form method="dialog" class="viewer-shell">
+        <button class="viewer-close" type="submit">Close</button>
+        <div class="viewer-copy">
+          <p class="eyebrow" id="viewerRe"></p>
+          <h2 id="viewerTitle"></h2>
+          <p id="viewerMeta"></p>
+          <div id="viewerChecks" class="viewer-checks"></div>
+        </div>
+        <img id="viewerImage" alt="" />
+      </form>
+    </dialog>
+  </body>
+</html>
