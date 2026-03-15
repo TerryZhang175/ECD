@@ -1,0 +1,1093 @@
+features,feature_count,cv_auc
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_top_peaks",4,0.8658476658476658
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_top_peaks",4,0.8657248157248157
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css",3,0.8605241605241605
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.8605241605241605
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css",4,0.8604832104832105
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.8604832104832105
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css",4,0.8597051597051597
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine",4,0.8595004095004095
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css",4,0.858968058968059
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered",4,0.8588861588861589
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css",4,0.8584766584766584
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.8579033579033579
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine",3,0.8564291564291564
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine",4,0.8564291564291564
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.8564291564291564
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine",4,0.8558149058149058
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine",4,0.8554463554463555
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.855036855036855
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered",4,0.8544635544635545
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine",4,0.8541359541359541
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.8533988533988534
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_top_peaks",4,0.8516380016380016
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8513308763308763
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered",4,0.8503685503685504
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_top_peaks",4,0.8498771498771499
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_isodec_css",3,0.8493857493857494
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css",4,0.8493857493857494
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css",4,0.8493857493857494
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.8493857493857494
+"fragments_fit_score, fragments_correlation, diagnose_isodec_css, diagnose_top_peaks",4,0.8491400491400491
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.849058149058149
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine",4,0.8482800982800983
+"fragments_fit_score, fragments_correlation, fragments_coverage, diagnose_isodec_css",4,0.8482391482391483
+"fragments_fit_score, fragments_correlation, diagnose_raw_cosine, diagnose_top_peaks",4,0.8476658476658476
+"fragments_fit_score, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.8476658476658476
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css",4,0.8472972972972973
+"fragments_correlation, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.8467649467649467
+"fragments_correlation, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.8466830466830467
+"fragments_fit_score, diagnose_isodec_css, diagnose_top_peaks",3,0.8466011466011466
+"fragments_fit_score, fragments_css, diagnose_isodec_css, diagnose_top_peaks",4,0.8466011466011466
+"fragments_fit_score, fragments_rawcos, diagnose_isodec_css, diagnose_top_peaks",4,0.8466011466011466
+"fragments_fit_score, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.8466011466011466
+"fragments_fit_score, fragments_score, diagnose_isodec_css, diagnose_top_peaks",4,0.8463144963144963
+"fragments_fit_score, fragments_score, fragments_correlation, diagnose_isodec_css",4,0.8463144963144963
+"fragments_fit_score, fragments_score, diagnose_isodec_css",3,0.846068796068796
+"fragments_fit_score, fragments_score, fragments_css, diagnose_isodec_css",4,0.846068796068796
+"fragments_fit_score, fragments_score, fragments_rawcos, diagnose_isodec_css",4,0.846068796068796
+"fragments_fit_score, fragments_score, fragments_unexplained, diagnose_isodec_css",4,0.846068796068796
+"fragments_fit_score, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.846027846027846
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css",4,0.846027846027846
+"fragments_fit_score, fragments_score, diagnose_isodec_css, diagnose_area_covered",4,0.8459049959049959
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8458640458640458
+"fragments_fit_score, fragments_correlation, diagnose_isodec_css, diagnose_final_cosine",4,0.8458640458640458
+"fragments_fit_score, fragments_correlation, fragments_unexplained, diagnose_isodec_css",4,0.8458640458640458
+"fragments_fit_score, fragments_correlation, diagnose_isodec_css",3,0.8458230958230958
+"fragments_fit_score, fragments_correlation, fragments_css, diagnose_isodec_css",4,0.8458230958230958
+"fragments_fit_score, fragments_correlation, fragments_rawcos, diagnose_isodec_css",4,0.8458230958230958
+"fragments_fit_score, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.8457821457821458
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered",4,0.8455364455364456
+"fragments_fit_score, diagnose_raw_cosine, diagnose_top_peaks",3,0.8454135954135954
+"fragments_fit_score, fragments_css, diagnose_raw_cosine, diagnose_top_peaks",4,0.8454135954135954
+"fragments_fit_score, fragments_rawcos, diagnose_raw_cosine, diagnose_top_peaks",4,0.8454135954135954
+"fragments_fit_score, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8454135954135954
+"fragments_fit_score, fragments_correlation, diagnose_isodec_css, diagnose_area_covered",4,0.8453316953316953
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_top_peaks",3,0.84494266994267
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, diagnose_top_peaks",4,0.8447379197379198
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_area_covered, diagnose_top_peaks",4,0.8443079443079443
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_raw_cosine",3,0.8441850941850941
+"fragments_fit_score, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8441850941850941
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine",4,0.8441850941850941
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.8441850941850941
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine",4,0.8441441441441442
+"fragments_fit_score, fragments_score, fragments_coverage, diagnose_isodec_css",4,0.8441031941031941
+"fragments_fit_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.844021294021294
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine",4,0.843939393939394
+"fragments_fit_score, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8438984438984439
+"fragments_fit_score, fragments_score, diagnose_raw_cosine, diagnose_top_peaks",4,0.8437346437346437
+"fragments_fit_score, diagnose_isodec_css",2,0.8436527436527437
+"fragments_fit_score, fragments_css, diagnose_isodec_css",3,0.8436527436527437
+"fragments_fit_score, fragments_rawcos, diagnose_isodec_css",3,0.8436527436527437
+"fragments_fit_score, fragments_rawcos, fragments_css, diagnose_isodec_css",4,0.8436527436527437
+"fragments_fit_score, fragments_unexplained, diagnose_isodec_css",3,0.8436117936117936
+"fragments_fit_score, fragments_css, fragments_unexplained, diagnose_isodec_css",4,0.8435708435708436
+"fragments_fit_score, fragments_rawcos, fragments_unexplained, diagnose_isodec_css",4,0.8435708435708436
+"fragments_fit_score, diagnose_isodec_css, diagnose_area_covered",3,0.8435298935298935
+"fragments_fit_score, fragments_css, diagnose_isodec_css, diagnose_area_covered",4,0.8435298935298935
+"fragments_fit_score, fragments_rawcos, diagnose_isodec_css, diagnose_area_covered",4,0.8435298935298935
+"fragments_fit_score, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.8435298935298935
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.8433660933660934
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained, diagnose_top_peaks",4,0.8432227682227682
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, diagnose_top_peaks",4,0.8428951678951679
+"fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_top_peaks",4,0.8427518427518428
+"fragments_fit_score, fragments_score, diagnose_isodec_css, diagnose_final_cosine",4,0.8427108927108927
+"fragments_fit_score, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.8425880425880425
+"fragments_fit_score, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8425061425061425
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8424447174447175
+"fragments_fit_score, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.8423832923832923
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine",4,0.8423832923832923
+"fragments_fit_score, fragments_coverage, diagnose_isodec_css",3,0.8423423423423423
+"fragments_fit_score, fragments_css, fragments_coverage, diagnose_isodec_css",4,0.8423423423423423
+"fragments_fit_score, fragments_rawcos, fragments_coverage, diagnose_isodec_css",4,0.8423423423423423
+"fragments_fit_score, diagnose_isodec_css, diagnose_final_cosine",3,0.842014742014742
+"fragments_fit_score, fragments_css, diagnose_isodec_css, diagnose_final_cosine",4,0.842014742014742
+"fragments_fit_score, fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine",4,0.842014742014742
+"fragments_fit_score, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.842014742014742
+"fragments_fit_score, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.841973791973792
+"fragments_fit_score, fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css",4,0.8418099918099918
+"fragments_correlation, fragments_coverage, diagnose_isodec_css",3,0.8415642915642916
+"fragments_correlation, fragments_css, fragments_coverage, diagnose_isodec_css",4,0.8415642915642916
+"fragments_correlation, fragments_rawcos, fragments_coverage, diagnose_isodec_css",4,0.8415642915642916
+"fragments_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_top_peaks",4,0.8415642915642916
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_top_peaks",4,0.8415438165438165
+"fragments_fit_score, fragments_score, diagnose_raw_cosine, diagnose_isodec_css",4,0.8411547911547912
+"fragments_fit_score, fragments_correlation, fragments_coverage, diagnose_raw_cosine",4,0.8410728910728911
+"fragments_fit_score, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.8410728910728911
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_area_covered",4,0.840990990990991
+"fragments_correlation, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.8409090909090909
+"fragments_correlation, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8407043407043407
+"fragments_score, fragments_correlation, fragments_coverage, diagnose_isodec_css",4,0.8403357903357903
+"fragments_score, fragments_pc_missing_peaks, diagnose_isodec_css",3,0.8402538902538903
+"fragments_score, fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css",4,0.8402538902538903
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css",4,0.8402538902538903
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css",4,0.8402538902538903
+"fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css",4,0.8402129402129402
+"fragments_fit_score, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.8401719901719902
+"fragments_correlation, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.8401310401310401
+"fragments_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered",4,0.8401310401310401
+"fragments_correlation, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.8400900900900901
+"fragments_fit_score, fragments_correlation, diagnose_raw_cosine",3,0.8399262899262899
+"fragments_fit_score, fragments_correlation, fragments_css, diagnose_raw_cosine",4,0.8399262899262899
+"fragments_fit_score, fragments_correlation, fragments_rawcos, diagnose_raw_cosine",4,0.8399262899262899
+"fragments_fit_score, fragments_correlation, fragments_unexplained, diagnose_raw_cosine",4,0.8399262899262899
+"fragments_fit_score, fragments_score, fragments_correlation, diagnose_raw_cosine",4,0.8398443898443898
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css",4,0.8398443898443898
+"fragments_fit_score, fragments_score, diagnose_raw_cosine",3,0.8397215397215397
+"fragments_fit_score, fragments_score, fragments_css, diagnose_raw_cosine",4,0.8397215397215397
+"fragments_fit_score, fragments_score, fragments_rawcos, diagnose_raw_cosine",4,0.8397215397215397
+"fragments_fit_score, fragments_score, fragments_unexplained, diagnose_raw_cosine",4,0.8397215397215397
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.8397215397215397
+"fragments_fit_score, fragments_correlation, diagnose_raw_cosine, diagnose_area_covered",4,0.8394758394758395
+"fragments_fit_score, fragments_css, diagnose_raw_cosine, diagnose_isodec_css",4,0.8394758394758395
+"fragments_fit_score, diagnose_raw_cosine, diagnose_isodec_css",3,0.8394348894348894
+"fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine",3,0.8394348894348894
+"fragments_fit_score, fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css",4,0.8394348894348894
+"fragments_fit_score, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.8394348894348894
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine",4,0.8394348894348894
+"fragments_score, fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine",4,0.8393939393939394
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine",4,0.8393939393939394
+"fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",3,0.8393120393120393
+"fragments_coverage, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8393120393120393
+"fragments_rawcos, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.8393120393120393
+"fragments_fit_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.8391072891072892
+"fragments_fit_score, fragments_correlation, diagnose_raw_cosine, diagnose_final_cosine",4,0.8389434889434889
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_area_covered, diagnose_top_peaks",4,0.8388615888615889
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine",4,0.8386977886977887
+"fragments_fit_score, fragments_css, diagnose_raw_cosine, diagnose_area_covered",4,0.8386568386568387
+"fragments_fit_score, fragments_rawcos, diagnose_raw_cosine, diagnose_area_covered",4,0.8386568386568387
+"fragments_fit_score, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.8386568386568387
+"fragments_fit_score, diagnose_raw_cosine, diagnose_area_covered",3,0.8386158886158886
+"fragments_fit_score, diagnose_raw_cosine",2,0.8385749385749386
+"fragments_fit_score, fragments_css, diagnose_raw_cosine",3,0.8385749385749386
+"fragments_fit_score, fragments_rawcos, diagnose_raw_cosine",3,0.8385749385749386
+"fragments_fit_score, fragments_unexplained, diagnose_raw_cosine",3,0.8385749385749386
+"fragments_fit_score, fragments_css, fragments_unexplained, diagnose_raw_cosine",4,0.8385749385749386
+"fragments_fit_score, fragments_rawcos, fragments_css, diagnose_raw_cosine",4,0.8385749385749386
+"fragments_fit_score, fragments_rawcos, fragments_unexplained, diagnose_raw_cosine",4,0.8385749385749386
+"fragments_fit_score, fragments_score, diagnose_raw_cosine, diagnose_area_covered",4,0.8385339885339885
+"fragments_score, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.8384520884520884
+"fragments_fit_score, fragments_score, fragments_coverage, diagnose_raw_cosine",4,0.8383292383292383
+"fragments_correlation, fragments_coverage, diagnose_raw_cosine",3,0.8382882882882883
+"fragments_correlation, fragments_css, fragments_coverage, diagnose_raw_cosine",4,0.8382882882882883
+"fragments_correlation, fragments_rawcos, fragments_coverage, diagnose_raw_cosine",4,0.8382882882882883
+"fragments_fit_score, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8381654381654382
+"fragments_score, fragments_correlation, fragments_coverage, diagnose_raw_cosine",4,0.8381654381654382
+"fragments_fit_score, fragments_coverage, diagnose_raw_cosine",3,0.838042588042588
+"fragments_css, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.838042588042588
+"fragments_fit_score, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.838042588042588
+"fragments_fit_score, fragments_css, fragments_coverage, diagnose_raw_cosine",4,0.838042588042588
+"fragments_fit_score, fragments_rawcos, fragments_coverage, diagnose_raw_cosine",4,0.838042588042588
+"fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.838001638001638
+"fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered",4,0.837960687960688
+"fragments_fit_score, fragments_correlation, diagnose_top_peaks",3,0.8379402129402129
+"fragments_fit_score, fragments_correlation, fragments_unexplained, diagnose_top_peaks",4,0.8379402129402129
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine, diagnose_top_peaks",4,0.8378378378378378
+"fragments_fit_score, fragments_correlation, fragments_css, diagnose_top_peaks",4,0.8377764127764128
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_top_peaks",4,0.8377354627354627
+"fragments_fit_score, fragments_correlation, diagnose_area_covered, diagnose_top_peaks",4,0.8376740376740377
+"fragments_fit_score, fragments_score, fragments_correlation, diagnose_top_peaks",4,0.8376126126126127
+"fragments_fit_score, fragments_correlation, fragments_coverage, diagnose_top_peaks",4,0.8375716625716626
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_top_peaks",3,0.8375511875511875
+"fragments_fit_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.8374692874692875
+"fragments_correlation, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.8373464373464373
+"fragments_fit_score, diagnose_raw_cosine, diagnose_final_cosine",3,0.8371007371007371
+"fragments_fit_score, fragments_css, diagnose_raw_cosine, diagnose_final_cosine",4,0.8371007371007371
+"fragments_fit_score, fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine",4,0.8371007371007371
+"fragments_fit_score, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.8371007371007371
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_top_peaks",4,0.8370188370188371
+"fragments_fit_score, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.8368959868959869
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks",3,0.8367731367731368
+"fragments_fit_score, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.8367731367731368
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, fragments_coverage",4,0.8367731367731368
+"fragments_coverage, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8366093366093366
+"fragments_fit_score, fragments_score, diagnose_raw_cosine, diagnose_final_cosine",4,0.8366093366093366
+"fragments_correlation, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8365274365274366
+"fragments_fit_score, fragments_correlation, diagnose_final_cosine, diagnose_top_peaks",4,0.8364250614250615
+"fragments_score, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine",4,0.8363226863226864
+"fragments_score, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine",4,0.8363226863226864
+"fragments_fit_score, fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks",4,0.8361179361179362
+"fragments_fit_score, fragments_score, fragments_correlation, fragments_pc_missing_peaks",4,0.8360769860769861
+"fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine, diagnose_top_peaks",4,0.8359541359541359
+"fragments_correlation, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.8357903357903358
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8355855855855856
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8352989352989353
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.8351760851760852
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_top_peaks",3,0.8351146601146601
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_top_peaks",4,0.8351146601146601
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_top_peaks",4,0.8351146601146601
+"fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.834930384930385
+"fragments_fit_score, diagnose_final_cosine, diagnose_top_peaks",3,0.8348689598689598
+"fragments_fit_score, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.8348689598689598
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, fragments_css",4,0.8347665847665847
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8346232596232597
+"fragments_fit_score, fragments_correlation, fragments_rawcos, diagnose_top_peaks",4,0.8344799344799345
+"fragments_fit_score, fragments_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8342956592956593
+"fragments_score, fragments_coverage, diagnose_isodec_css",3,0.8341932841932842
+"fragments_score, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.8341932841932842
+"fragments_score, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8341932841932842
+"fragments_score, fragments_rawcos, fragments_coverage, diagnose_isodec_css",4,0.8341932841932842
+"fragments_fit_score, fragments_score, diagnose_area_covered, diagnose_top_peaks",4,0.8341523341523341
+"fragments_fit_score, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8341318591318592
+"fragments_fit_score, diagnose_area_covered, diagnose_top_peaks",3,0.834070434070434
+"fragments_fit_score, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.834070434070434
+"fragments_score, fragments_css, fragments_coverage, diagnose_isodec_css",4,0.834070434070434
+"fragments_fit_score, fragments_score, diagnose_final_cosine, diagnose_top_peaks",4,0.833927108927109
+"fragments_fit_score, fragments_css, diagnose_area_covered, diagnose_top_peaks",4,0.8337837837837838
+"fragments_score, fragments_correlation, diagnose_raw_cosine, diagnose_top_peaks",4,0.8337428337428338
+"fragments_score, fragments_correlation, diagnose_isodec_css",3,0.8336609336609336
+"fragments_score, fragments_correlation, diagnose_isodec_css, diagnose_area_covered",4,0.8336609336609336
+"fragments_score, fragments_correlation, diagnose_isodec_css, diagnose_final_cosine",4,0.8336609336609336
+"fragments_score, fragments_correlation, diagnose_isodec_css, diagnose_top_peaks",4,0.8336609336609336
+"fragments_score, fragments_correlation, fragments_css, diagnose_isodec_css",4,0.8336609336609336
+"fragments_score, fragments_correlation, fragments_rawcos, diagnose_isodec_css",4,0.8336609336609336
+"fragments_score, fragments_correlation, fragments_unexplained, diagnose_isodec_css",4,0.8336609336609336
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8335790335790336
+"fragments_score, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.8335790335790336
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered",4,0.8332104832104832
+"fragments_fit_score, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8330876330876331
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8330466830466831
+"fragments_score, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.8327600327600327
+"fragments_fit_score, fragments_rawcos, diagnose_final_cosine, diagnose_top_peaks",4,0.8326781326781327
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, diagnose_top_peaks",4,0.8326371826371827
+"fragments_fit_score, diagnose_top_peaks",2,0.8326167076167076
+"fragments_fit_score, fragments_unexplained, diagnose_top_peaks",3,0.8326167076167076
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine",3,0.8325552825552825
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine",4,0.8323914823914824
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, diagnose_area_covered",4,0.8321867321867322
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_area_covered",3,0.8321457821457822
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered",4,0.8321457821457822
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered",4,0.8321457821457822
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.8321048321048321
+"fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",3,0.831981981981982
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.831981981981982
+"fragments_rawcos, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.831981981981982
+"fragments_fit_score, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.8319000819000819
+"fragments_fit_score, fragments_coverage, diagnose_top_peaks",3,0.8318796068796068
+"fragments_fit_score, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.8318796068796068
+"fragments_score, fragments_coverage, diagnose_raw_cosine",3,0.8318181818181818
+"fragments_score, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.8318181818181818
+"fragments_score, fragments_rawcos, fragments_coverage, diagnose_raw_cosine",4,0.8318181818181818
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, diagnose_area_covered",4,0.8316543816543817
+"fragments_score, fragments_css, fragments_coverage, diagnose_raw_cosine",4,0.8316543816543817
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8314496314496315
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine",3,0.8314086814086814
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.8314086814086814
+"fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine, diagnose_final_cosine",4,0.8314086814086814
+"fragments_fit_score, fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained",4,0.8313267813267813
+"fragments_correlation, fragments_rawcos, fragments_coverage, diagnose_top_peaks",4,0.8312039312039312
+"fragments_fit_score, fragments_score, diagnose_top_peaks",3,0.8311834561834562
+"fragments_fit_score, fragments_score, fragments_unexplained, diagnose_top_peaks",4,0.8311834561834562
+"fragments_css, fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css",4,0.8311629811629812
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine",4,0.8311629811629812
+"fragments_score, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8311220311220311
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.830999180999181
+"fragments_coverage, diagnose_raw_cosine",2,0.830958230958231
+"fragments_rawcos, fragments_coverage, diagnose_raw_cosine",3,0.830958230958231
+"fragments_fit_score, fragments_score, fragments_coverage, diagnose_top_peaks",4,0.830937755937756
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css",3,0.8308353808353809
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_isodec_css",4,0.8307944307944308
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.8307125307125307
+"fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",3,0.8306715806715806
+"fragments_fit_score, fragments_rawcos, diagnose_area_covered, diagnose_top_peaks",4,0.8306715806715806
+"fragments_fit_score, fragments_score, fragments_correlation, diagnose_area_covered",4,0.8306715806715806
+"fragments_rawcos, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.8306715806715806
+"fragments_fit_score, fragments_correlation, diagnose_area_covered",3,0.8305896805896806
+"fragments_fit_score, fragments_correlation, fragments_css, diagnose_area_covered",4,0.8305487305487306
+"fragments_fit_score, fragments_correlation, fragments_unexplained, diagnose_area_covered",4,0.8305487305487306
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, diagnose_raw_cosine",4,0.8305487305487306
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_area_covered",4,0.8303030303030303
+"fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered",3,0.8302211302211302
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8302211302211302
+"fragments_pc_missing_peaks, diagnose_raw_cosine",2,0.8301801801801801
+"fragments_score, diagnose_isodec_css",2,0.8301801801801801
+"fragments_score, diagnose_isodec_css, diagnose_area_covered",3,0.8301801801801801
+"fragments_score, fragments_css, diagnose_isodec_css",3,0.8301801801801801
+"fragments_score, fragments_unexplained, diagnose_isodec_css",3,0.8301801801801801
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.8301801801801801
+"fragments_score, fragments_css, diagnose_isodec_css, diagnose_area_covered",4,0.8301801801801801
+"fragments_score, fragments_css, fragments_unexplained, diagnose_isodec_css",4,0.8301801801801801
+"fragments_score, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.8301801801801801
+"fragments_score, fragments_rawcos, diagnose_isodec_css",3,0.8300573300573301
+"fragments_fit_score, fragments_correlation, fragments_coverage, diagnose_area_covered",4,0.8300573300573301
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.8300573300573301
+"fragments_score, fragments_rawcos, diagnose_isodec_css, diagnose_area_covered",4,0.8300573300573301
+"fragments_score, fragments_rawcos, fragments_css, diagnose_isodec_css",4,0.8300573300573301
+"fragments_score, fragments_rawcos, fragments_unexplained, diagnose_isodec_css",4,0.8300573300573301
+"fragments_fit_score, fragments_css, fragments_unexplained, diagnose_top_peaks",4,0.8299344799344799
+"fragments_fit_score, fragments_css, diagnose_top_peaks",3,0.8298935298935299
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.8298525798525799
+"fragments_score, fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css",4,0.8298116298116298
+"fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine, diagnose_isodec_css",4,0.8297706797706798
+"fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine, diagnose_area_covered",4,0.8296887796887797
+"fragments_fit_score, fragments_correlation, diagnose_final_cosine, diagnose_area_covered",4,0.8295249795249795
+"fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.8293611793611794
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine, diagnose_area_covered",4,0.8292792792792792
+"fragments_coverage, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.8291154791154791
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks",3,0.829074529074529
+"fragments_coverage, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.829074529074529
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.829074529074529
+"fragments_css, fragments_coverage, diagnose_raw_cosine",3,0.829033579033579
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage",4,0.829033579033579
+"fragments_fit_score, fragments_score, fragments_css, diagnose_top_peaks",4,0.829033579033579
+"fragments_rawcos, fragments_css, fragments_coverage, diagnose_raw_cosine",4,0.829033579033579
+"fragments_score, diagnose_isodec_css, diagnose_top_peaks",3,0.8289107289107289
+"fragments_score, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.8289107289107289
+"fragments_score, fragments_css, diagnose_isodec_css, diagnose_top_peaks",4,0.8289107289107289
+"fragments_score, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.8289107289107289
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained",4,0.8288697788697789
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine",3,0.8288288288288288
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_raw_cosine",3,0.8287878787878787
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8287878787878787
+"fragments_fit_score, fragments_rawcos, diagnose_top_peaks",3,0.8287059787059787
+"fragments_fit_score, fragments_rawcos, fragments_unexplained, diagnose_top_peaks",4,0.8287059787059787
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.8287059787059787
+"fragments_score, fragments_rawcos, diagnose_isodec_css, diagnose_top_peaks",4,0.8287059787059787
+"fragments_fit_score, fragments_css, fragments_coverage, diagnose_top_peaks",4,0.8286650286650287
+"fragments_correlation, fragments_coverage, diagnose_top_peaks",3,0.8286036036036036
+"fragments_correlation, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.8286036036036036
+"fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine",3,0.8285421785421785
+"fragments_score, diagnose_raw_cosine, diagnose_top_peaks",3,0.8283783783783784
+"fragments_score, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8283783783783784
+"fragments_score, fragments_css, diagnose_raw_cosine, diagnose_top_peaks",4,0.8283783783783784
+"fragments_score, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8283783783783784
+"fragments_score, fragments_correlation, diagnose_raw_cosine",3,0.8283374283374283
+"fragments_score, fragments_correlation, diagnose_raw_cosine, diagnose_area_covered",4,0.8283374283374283
+"fragments_score, fragments_correlation, fragments_css, diagnose_raw_cosine",4,0.8283374283374283
+"fragments_score, fragments_correlation, fragments_rawcos, diagnose_raw_cosine",4,0.8283374283374283
+"fragments_score, fragments_correlation, fragments_unexplained, diagnose_raw_cosine",4,0.8283374283374283
+"fragments_score, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.8282555282555283
+"fragments_score, fragments_rawcos, diagnose_raw_cosine, diagnose_top_peaks",4,0.8281736281736282
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.8281326781326781
+"fragments_fit_score, fragments_rawcos, fragments_coverage, diagnose_top_peaks",4,0.828091728091728
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_top_peaks",3,0.8280507780507781
+"fragments_coverage, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.827968877968878
+"fragments_css, fragments_coverage, diagnose_isodec_css, diagnose_top_peaks",4,0.827968877968878
+"fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",3,0.8278869778869778
+"fragments_rawcos, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8278869778869778
+"fragments_fit_score, diagnose_final_cosine, diagnose_area_covered",3,0.8278460278460279
+"fragments_fit_score, fragments_score, fragments_rawcos, diagnose_top_peaks",4,0.8278460278460279
+"fragments_fit_score, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.8278460278460279
+"fragments_fit_score, fragments_css, diagnose_final_cosine, diagnose_area_covered",4,0.8278050778050778
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.8277641277641278
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.8277231777231777
+"fragments_fit_score, fragments_score, diagnose_final_cosine, diagnose_area_covered",4,0.8276412776412776
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained, diagnose_raw_cosine",4,0.8276412776412776
+"fragments_coverage, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8275593775593776
+"fragments_css, fragments_coverage, diagnose_raw_cosine, diagnose_area_covered",4,0.8274774774774775
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained, diagnose_raw_cosine",4,0.8274774774774775
+"fragments_fit_score, fragments_rawcos, fragments_css, diagnose_top_peaks",4,0.8273546273546274
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, diagnose_area_covered",4,0.8273136773136773
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css",3,0.8272727272727273
+"fragments_coverage, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.8271908271908271
+"fragments_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.8271498771498772
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css",3,0.827027027027027
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, diagnose_raw_cosine",4,0.827027027027027
+"fragments_fit_score, diagnose_area_covered",2,0.826986076986077
+"fragments_fit_score, fragments_unexplained, diagnose_area_covered",3,0.826986076986077
+"fragments_fit_score, fragments_correlation, fragments_rawcos, diagnose_area_covered",4,0.826986076986077
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.826986076986077
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_top_peaks",4,0.8269451269451269
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, fragments_css",4,0.826904176904177
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.8268632268632269
+"fragments_coverage, diagnose_isodec_css, diagnose_area_covered",3,0.8268222768222768
+"fragments_rawcos, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.8268222768222768
+"fragments_score, diagnose_raw_cosine, diagnose_isodec_css",3,0.8267813267813268
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css",4,0.8267813267813268
+"fragments_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.8267813267813268
+"fragments_score, fragments_css, diagnose_raw_cosine, diagnose_isodec_css",4,0.8267813267813268
+"fragments_score, fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css",4,0.8267813267813268
+"fragments_score, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.8267813267813268
+"fragments_fit_score, fragments_css, diagnose_area_covered",3,0.8267403767403767
+"fragments_fit_score, fragments_css, fragments_unexplained, diagnose_area_covered",4,0.8267403767403767
+"fragments_score, fragments_correlation, diagnose_raw_cosine, diagnose_final_cosine",4,0.8265765765765766
+"fragments_score, fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks",4,0.8265356265356265
+"fragments_coverage, fragments_unexplained, diagnose_isodec_css",3,0.8264537264537265
+"fragments_rawcos, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8264537264537265
+"fragments_fit_score, fragments_score, diagnose_area_covered",3,0.8264127764127764
+"fragments_score, diagnose_isodec_css, diagnose_final_cosine",3,0.8264127764127764
+"fragments_fit_score, fragments_score, fragments_unexplained, diagnose_area_covered",4,0.8264127764127764
+"fragments_score, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.8264127764127764
+"fragments_score, fragments_css, diagnose_isodec_css, diagnose_final_cosine",4,0.8264127764127764
+"fragments_score, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.8264127764127764
+"fragments_correlation, diagnose_raw_cosine, diagnose_top_peaks",3,0.8263718263718264
+"fragments_correlation, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8263718263718264
+"fragments_correlation, fragments_css, diagnose_raw_cosine, diagnose_top_peaks",4,0.8263718263718264
+"fragments_correlation, fragments_rawcos, diagnose_raw_cosine, diagnose_top_peaks",4,0.8263718263718264
+"fragments_correlation, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8263718263718264
+"fragments_score, fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine",4,0.8263718263718264
+"fragments_coverage, fragments_unexplained, diagnose_raw_cosine",3,0.8262489762489762
+"fragments_fit_score, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.8262489762489762
+"fragments_rawcos, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.8262489762489762
+"fragments_score, diagnose_raw_cosine",2,0.8261261261261261
+"fragments_score, diagnose_raw_cosine, diagnose_area_covered",3,0.8261261261261261
+"fragments_score, fragments_css, diagnose_raw_cosine",3,0.8261261261261261
+"fragments_score, fragments_unexplained, diagnose_raw_cosine",3,0.8261261261261261
+"fragments_score, fragments_css, diagnose_raw_cosine, diagnose_area_covered",4,0.8261261261261261
+"fragments_score, fragments_css, fragments_unexplained, diagnose_raw_cosine",4,0.8261261261261261
+"fragments_score, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.8261261261261261
+"fragments_fit_score, fragments_score, fragments_css, diagnose_area_covered",4,0.826003276003276
+"fragments_score, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.825962325962326
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css",4,0.8257985257985258
+"fragments_fit_score, fragments_coverage, diagnose_area_covered",3,0.8257575757575758
+"fragments_fit_score, fragments_pc_missing_peaks, diagnose_final_cosine",3,0.8257575757575758
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered",3,0.8257575757575758
+"fragments_fit_score, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.8257575757575758
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine",4,0.8257575757575758
+"fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css, diagnose_top_peaks",4,0.8257575757575758
+"fragments_fit_score, fragments_score, fragments_correlation",3,0.8257166257166257
+"fragments_fit_score, fragments_score, fragments_correlation, fragments_unexplained",4,0.8257166257166257
+"fragments_fit_score, fragments_score, fragments_correlation, fragments_coverage",4,0.8256756756756757
+"fragments_fit_score, fragments_css, fragments_coverage, diagnose_area_covered",4,0.8256347256347256
+"fragments_score, fragments_rawcos, diagnose_raw_cosine",3,0.8255528255528255
+"fragments_css, fragments_coverage, fragments_unexplained, diagnose_raw_cosine",4,0.8255528255528255
+"fragments_score, fragments_rawcos, diagnose_raw_cosine, diagnose_area_covered",4,0.8255528255528255
+"fragments_score, fragments_rawcos, fragments_css, diagnose_raw_cosine",4,0.8255528255528255
+"fragments_score, fragments_rawcos, fragments_unexplained, diagnose_raw_cosine",4,0.8255528255528255
+"fragments_coverage, diagnose_isodec_css",2,0.8253890253890254
+"fragments_rawcos, fragments_coverage, diagnose_isodec_css",3,0.8253890253890254
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8253890253890254
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.8253480753480753
+"fragments_coverage, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.8252661752661753
+"fragments_css, fragments_coverage, diagnose_isodec_css, diagnose_area_covered",4,0.8252252252252252
+"fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine",3,0.8251842751842752
+"fragments_fit_score, fragments_rawcos, diagnose_area_covered",3,0.825020475020475
+"fragments_fit_score, fragments_rawcos, fragments_css, diagnose_area_covered",4,0.825020475020475
+"fragments_fit_score, fragments_rawcos, fragments_unexplained, diagnose_area_covered",4,0.825020475020475
+"fragments_fit_score, fragments_rawcos, diagnose_final_cosine, diagnose_area_covered",4,0.824979524979525
+"fragments_fit_score, fragments_score, fragments_coverage, diagnose_area_covered",4,0.8249385749385749
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, diagnose_isodec_css",4,0.8248976248976249
+"fragments_score, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8248976248976249
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine",4,0.8248771498771499
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_area_covered",4,0.8248157248157248
+"fragments_pc_missing_peaks, diagnose_isodec_css",2,0.8247338247338247
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.8247338247338247
+"fragments_coverage, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.8246928746928747
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8246928746928747
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained, diagnose_isodec_css",4,0.8246928746928747
+"fragments_fit_score, fragments_score, fragments_correlation, fragments_rawcos",4,0.8246109746109747
+"fragments_fit_score, fragments_score, fragments_rawcos, diagnose_area_covered",4,0.8246109746109747
+"fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css, diagnose_area_covered",4,0.8246109746109747
+"fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css, diagnose_final_cosine",4,0.8246109746109747
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css, diagnose_final_cosine",4,0.8246109746109747
+"fragments_fit_score, fragments_correlation, fragments_rawcos, fragments_coverage",4,0.8245700245700246
+"fragments_fit_score, fragments_correlation, fragments_rawcos",3,0.8244471744471744
+"fragments_fit_score, fragments_correlation, diagnose_final_cosine",3,0.8244062244062244
+"fragments_fit_score, fragments_correlation, fragments_rawcos, fragments_unexplained",4,0.8244062244062244
+"fragments_fit_score, fragments_correlation, fragments_unexplained, diagnose_final_cosine",4,0.8244062244062244
+"fragments_fit_score, fragments_correlation",2,0.8242833742833743
+"fragments_fit_score, fragments_correlation, fragments_unexplained",3,0.8242424242424242
+"fragments_fit_score, fragments_score, fragments_correlation, diagnose_final_cosine",4,0.8242014742014742
+"fragments_fit_score, fragments_correlation, fragments_coverage",3,0.8241605241605242
+"fragments_fit_score, fragments_correlation, fragments_coverage, fragments_unexplained",4,0.8240786240786241
+"fragments_fit_score, fragments_correlation, fragments_rawcos, fragments_css",4,0.824037674037674
+"fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",3,0.823996723996724
+"fragments_rawcos, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.823996723996724
+"fragments_fit_score, fragments_rawcos, fragments_coverage, diagnose_area_covered",4,0.8239557739557739
+"fragments_fit_score, fragments_correlation, fragments_rawcos, diagnose_final_cosine",4,0.823914823914824
+"fragments_fit_score, fragments_score, fragments_correlation, fragments_css",4,0.8237510237510237
+"fragments_css, fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine",4,0.8236691236691237
+"fragments_fit_score, fragments_correlation, fragments_css, diagnose_final_cosine",4,0.8236691236691237
+"fragments_correlation, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8236486486486486
+"fragments_fit_score, fragments_correlation, fragments_coverage, diagnose_final_cosine",4,0.8235872235872236
+"fragments_correlation, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.8235462735462735
+"fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.8235462735462735
+"fragments_css, fragments_coverage, fragments_unexplained, diagnose_isodec_css",4,0.8234643734643735
+"fragments_correlation, fragments_css, fragments_coverage, diagnose_top_peaks",4,0.8233824733824734
+"fragments_score, fragments_correlation, fragments_coverage, diagnose_top_peaks",4,0.8232800982800983
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_isodec_css",3,0.8232596232596232
+"fragments_score, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.8232596232596232
+"fragments_score, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.8230958230958231
+"fragments_fit_score, fragments_correlation, fragments_css",3,0.822972972972973
+"fragments_correlation, diagnose_isodec_css, diagnose_top_peaks",3,0.8229320229320229
+"fragments_correlation, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.8229320229320229
+"fragments_correlation, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.8229320229320229
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_area_covered",3,0.8228501228501228
+"fragments_fit_score, fragments_correlation, fragments_css, fragments_coverage",4,0.8227682227682228
+"fragments_fit_score, fragments_correlation, fragments_css, fragments_unexplained",4,0.8227682227682228
+"fragments_fit_score, diagnose_final_cosine",2,0.8227272727272728
+"fragments_fit_score, fragments_score, fragments_rawcos, fragments_pc_missing_peaks",4,0.8227272727272728
+"fragments_fit_score, fragments_score, diagnose_final_cosine",3,0.8226863226863227
+"fragments_fit_score, fragments_score, fragments_unexplained, diagnose_final_cosine",4,0.8226863226863227
+"fragments_correlation, fragments_rawcos, diagnose_isodec_css, diagnose_top_peaks",4,0.8226453726453726
+"fragments_css, fragments_coverage, diagnose_isodec_css",3,0.8226044226044226
+"fragments_fit_score, fragments_unexplained, diagnose_final_cosine",3,0.8226044226044226
+"fragments_rawcos, fragments_css, fragments_coverage, diagnose_isodec_css",4,0.8226044226044226
+"fragments_fit_score, fragments_score, fragments_rawcos",3,0.8225225225225226
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine",4,0.8225225225225226
+"fragments_fit_score, fragments_score, fragments_rawcos, fragments_unexplained",4,0.8225225225225226
+"fragments_correlation, fragments_css, diagnose_isodec_css, diagnose_top_peaks",4,0.8224815724815725
+"fragments_fit_score, fragments_score, fragments_rawcos, fragments_coverage",4,0.8224815724815725
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered",4,0.8223587223587223
+"fragments_coverage, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.8223587223587223
+"fragments_correlation, fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8221539721539721
+"fragments_coverage, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.8221539721539721
+"fragments_fit_score, fragments_score, fragments_css, diagnose_final_cosine",4,0.821990171990172
+"fragments_fit_score, fragments_score, fragments_coverage, diagnose_final_cosine",4,0.8219492219492219
+"fragments_fit_score, fragments_coverage, diagnose_final_cosine",3,0.8218673218673219
+"fragments_fit_score, fragments_score",2,0.8218263718263719
+"fragments_fit_score, fragments_score, fragments_coverage",3,0.8218263718263719
+"fragments_fit_score, fragments_score, fragments_unexplained",3,0.8218263718263719
+"fragments_fit_score, fragments_score, fragments_coverage, fragments_unexplained",4,0.8218263718263719
+"fragments_fit_score, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.8217444717444717
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks",3,0.8216625716625716
+"fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css",3,0.8216625716625716
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage",4,0.8216625716625716
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, diagnose_area_covered",4,0.8216216216216217
+"fragments_fit_score, fragments_score, fragments_rawcos, diagnose_final_cosine",4,0.8216216216216217
+"fragments_fit_score, fragments_css, diagnose_final_cosine",3,0.8215601965601965
+"fragments_fit_score, fragments_css, fragments_unexplained, diagnose_final_cosine",4,0.8215601965601965
+"fragments_correlation, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.8215397215397215
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks",3,0.8212940212940213
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, fragments_coverage",4,0.8212940212940213
+"fragments_fit_score, fragments_rawcos, diagnose_final_cosine",3,0.8212121212121212
+"fragments_fit_score, fragments_score, fragments_css",3,0.820925470925471
+"fragments_fit_score, fragments_rawcos, fragments_css, diagnose_final_cosine",4,0.820925470925471
+"fragments_fit_score, fragments_score, fragments_css, fragments_coverage",4,0.820925470925471
+"fragments_fit_score, fragments_score, fragments_css, fragments_unexplained",4,0.820925470925471
+"fragments_fit_score, fragments_rawcos, fragments_unexplained, diagnose_final_cosine",4,0.8208845208845209
+"fragments_fit_score, fragments_rawcos",2,0.8208435708435708
+"fragments_score, diagnose_raw_cosine, diagnose_final_cosine",3,0.8205978705978706
+"fragments_score, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.8205978705978706
+"fragments_score, fragments_css, diagnose_raw_cosine, diagnose_final_cosine",4,0.8205978705978706
+"fragments_score, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.8205978705978706
+"fragments_fit_score, fragments_css, fragments_coverage, diagnose_final_cosine",4,0.8205773955773956
+"fragments_fit_score, fragments_score, fragments_rawcos, fragments_css",4,0.8205159705159705
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_area_covered",4,0.8204340704340705
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, diagnose_isodec_css",4,0.8203521703521703
+"fragments_score, fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine",4,0.8203521703521703
+"fragments_fit_score, fragments_rawcos, fragments_coverage",3,0.8203112203112203
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered",4,0.8202293202293203
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_css",4,0.82006552006552
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, fragments_css",4,0.82006552006552
+"fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",3,0.8200245700245701
+"fragments_rawcos, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.8200245700245701
+"fragments_fit_score, fragments_rawcos, fragments_coverage, diagnose_final_cosine",4,0.81994266994267
+"fragments_coverage, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.8198607698607698
+"fragments_coverage, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.8198607698607698
+"fragments_fit_score, fragments_rawcos, fragments_unexplained",3,0.8198198198198198
+"fragments_correlation, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8198198198198198
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css",3,0.8197788697788698
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, fragments_coverage",4,0.8197379197379198
+"fragments_fit_score, fragments_pc_missing_peaks",2,0.8195331695331696
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage",3,0.8195331695331696
+"fragments_fit_score, fragments_rawcos, fragments_coverage, fragments_unexplained",4,0.8194512694512694
+"fragments_score, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_top_peaks",4,0.8192669942669942
+"fragments_fit_score, fragments_coverage",2,0.8191646191646191
+fragments_fit_score,1,0.8190827190827191
+"fragments_fit_score, fragments_rawcos, fragments_css",3,0.8190417690417691
+"fragments_css, fragments_coverage, diagnose_isodec_css, diagnose_final_cosine",4,0.819000819000819
+"fragments_fit_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained",4,0.819000819000819
+"fragments_fit_score, fragments_rawcos, fragments_css, fragments_coverage",4,0.8188779688779689
+"fragments_correlation, fragments_rawcos, fragments_coverage",3,0.8187551187551187
+"fragments_fit_score, fragments_css",2,0.8187141687141687
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered",4,0.8187141687141687
+"fragments_fit_score, fragments_score, fragments_pc_missing_peaks, fragments_unexplained",4,0.8187141687141687
+"fragments_fit_score, fragments_unexplained",2,0.8185913185913186
+"fragments_fit_score, fragments_css, fragments_coverage",3,0.8185913185913186
+"fragments_fit_score, fragments_coverage, fragments_unexplained",3,0.8185503685503686
+"fragments_fit_score, fragments_rawcos, fragments_css, fragments_unexplained",4,0.8185094185094185
+"fragments_fit_score, fragments_css, fragments_unexplained",3,0.8180999180999181
+"fragments_fit_score, fragments_css, fragments_coverage, fragments_unexplained",4,0.8178951678951679
+"fragments_correlation, fragments_rawcos, fragments_coverage, fragments_unexplained",4,0.8166666666666667
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_unexplained",3,0.8163390663390664
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained",4,0.8163390663390664
+"fragments_fit_score, fragments_pc_missing_peaks, fragments_css, fragments_unexplained",4,0.8161343161343161
+"fragments_correlation, diagnose_isodec_css, diagnose_area_covered",3,0.8146191646191646
+"fragments_correlation, fragments_rawcos, fragments_css, fragments_coverage",4,0.8146191646191646
+"fragments_correlation, diagnose_isodec_css",2,0.8145372645372645
+"fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css",3,0.8141277641277641
+"fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.8141277641277641
+"fragments_correlation, fragments_css, diagnose_raw_cosine, diagnose_isodec_css",4,0.8141277641277641
+"fragments_correlation, fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css",4,0.8140458640458641
+"fragments_correlation, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.8140458640458641
+"fragments_correlation, fragments_unexplained, diagnose_isodec_css",3,0.813963963963964
+"fragments_correlation, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.813963963963964
+"fragments_correlation, fragments_rawcos, fragments_coverage, diagnose_area_covered",4,0.8138001638001638
+"fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8135544635544636
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_top_peaks",4,0.8135544635544636
+"fragments_correlation, fragments_css, diagnose_isodec_css, diagnose_area_covered",4,0.8134725634725635
+"fragments_correlation, fragments_css, diagnose_isodec_css",3,0.8133906633906633
+"fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_top_peaks",3,0.8133292383292383
+"fragments_score, fragments_correlation, fragments_rawcos, fragments_coverage",4,0.8133087633087633
+"fragments_correlation, fragments_css, fragments_unexplained, diagnose_isodec_css",4,0.8127354627354627
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8126330876330876
+"fragments_correlation, diagnose_raw_cosine",2,0.8122440622440622
+"fragments_correlation, fragments_unexplained, diagnose_raw_cosine",3,0.8122440622440622
+"fragments_correlation, fragments_pc_missing_peaks",2,0.8122031122031123
+"fragments_correlation, fragments_rawcos, diagnose_isodec_css",3,0.8122031122031123
+"fragments_correlation, fragments_rawcos, diagnose_isodec_css, diagnose_area_covered",4,0.811998361998362
+"fragments_correlation, diagnose_isodec_css, diagnose_final_cosine",3,0.8119164619164619
+"fragments_correlation, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.8119164619164619
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained",3,0.8118755118755119
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained",4,0.8118755118755119
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, fragments_unexplained",4,0.8118345618345618
+"fragments_correlation, fragments_css, diagnose_raw_cosine",3,0.8117936117936118
+"fragments_correlation, fragments_css, fragments_unexplained, diagnose_raw_cosine",4,0.8117936117936118
+"fragments_correlation, fragments_pc_missing_peaks, diagnose_final_cosine",3,0.8117526617526617
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage",3,0.8117526617526617
+"fragments_correlation, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.8116707616707617
+"fragments_correlation, diagnose_raw_cosine, diagnose_area_covered",3,0.8115069615069616
+"fragments_correlation, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.8115069615069616
+"fragments_correlation, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.8114660114660115
+"fragments_correlation, fragments_rawcos, fragments_unexplained, diagnose_isodec_css",4,0.8114250614250614
+"fragments_correlation, fragments_rawcos, fragments_css, diagnose_isodec_css",4,0.8113022113022113
+"fragments_correlation, fragments_css, diagnose_isodec_css, diagnose_final_cosine",4,0.8112612612612613
+"fragments_correlation, fragments_css, diagnose_raw_cosine, diagnose_area_covered",4,0.8110565110565111
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css",3,0.810974610974611
+"fragments_correlation, fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine",4,0.8108517608517608
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, fragments_coverage",4,0.8107698607698608
+"fragments_score, fragments_correlation, fragments_rawcos, diagnose_top_peaks",4,0.8106879606879607
+"fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine",4,0.8105241605241605
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks",3,0.8100737100737101
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, fragments_coverage",4,0.81003276003276
+"fragments_score, fragments_correlation, fragments_rawcos, fragments_unexplained",4,0.81003276003276
+"fragments_score, fragments_correlation, fragments_rawcos",3,0.80999180999181
+"fragments_correlation, fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine",4,0.80990990990991
+"fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8098894348894349
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.8097665847665848
+"fragments_correlation, diagnose_raw_cosine, diagnose_final_cosine",3,0.8095823095823096
+"fragments_correlation, fragments_rawcos, diagnose_raw_cosine",3,0.8095823095823096
+"fragments_correlation, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.8095823095823096
+"fragments_correlation, fragments_css, diagnose_raw_cosine, diagnose_final_cosine",4,0.8095413595413595
+"fragments_correlation, fragments_rawcos, fragments_unexplained, diagnose_raw_cosine",4,0.8095413595413595
+"fragments_correlation, fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine",4,0.8095004095004095
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, fragments_css",4,0.8093775593775594
+"fragments_score, fragments_correlation, fragments_rawcos, fragments_css",4,0.8093366093366093
+"fragments_correlation, fragments_rawcos, fragments_css, diagnose_raw_cosine",4,0.8092547092547092
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8092137592137593
+"fragments_correlation, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.809009009009009
+"fragments_score, fragments_pc_missing_peaks, diagnose_top_peaks",3,0.8089475839475839
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_top_peaks",4,0.8089475839475839
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_top_peaks",4,0.8088861588861589
+"fragments_correlation, fragments_rawcos, diagnose_raw_cosine, diagnose_area_covered",4,0.8087633087633087
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_top_peaks",4,0.8087428337428337
+"fragments_score, fragments_correlation, diagnose_top_peaks",3,0.8086199836199837
+"fragments_score, fragments_correlation, fragments_unexplained, diagnose_top_peaks",4,0.8086199836199837
+"fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",3,0.8084971334971335
+"fragments_score, fragments_correlation, fragments_pc_missing_peaks, fragments_unexplained",4,0.8083538083538083
+"fragments_correlation, fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine",4,0.8081490581490581
+"fragments_score, fragments_correlation, diagnose_area_covered, diagnose_top_peaks",4,0.808005733005733
+"fragments_score, fragments_pc_missing_peaks, diagnose_area_covered, diagnose_top_peaks",4,0.8076576576576576
+"fragments_score, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8073095823095823
+"fragments_coverage, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.8071048321048321
+"fragments_score, fragments_correlation, fragments_rawcos, diagnose_area_covered",4,0.8068796068796069
+"fragments_coverage, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8068386568386569
+"fragments_score, fragments_correlation, fragments_css, diagnose_top_peaks",4,0.8067362817362818
+"fragments_correlation, fragments_coverage",2,0.8065520065520065
+"fragments_rawcos, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8065110565110565
+"fragments_correlation, fragments_rawcos, fragments_coverage, diagnose_final_cosine",4,0.8058968058968059
+"fragments_score, fragments_pc_missing_peaks, fragments_css, diagnose_top_peaks",4,0.8058558558558558
+"fragments_score, fragments_correlation, diagnose_final_cosine, diagnose_top_peaks",4,0.8056715806715806
+"fragments_css, fragments_coverage, diagnose_final_cosine, diagnose_top_peaks",4,0.8053644553644553
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine",4,0.8043816543816544
+"fragments_score, fragments_rawcos, fragments_coverage, diagnose_top_peaks",4,0.8042997542997543
+"fragments_correlation, fragments_rawcos, fragments_unexplained, diagnose_top_peaks",4,0.8042178542178542
+"fragments_correlation, fragments_rawcos, diagnose_top_peaks",3,0.8041769041769041
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks",3,0.8040950040950041
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage",4,0.8040950040950041
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained",4,0.8040950040950041
+"diagnose_raw_cosine, diagnose_top_peaks",2,0.8032350532350533
+"fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",3,0.8031941031941032
+"fragments_score, diagnose_top_peaks",2,0.8028869778869779
+"fragments_score, fragments_unexplained, diagnose_top_peaks",3,0.8028460278460279
+"fragments_score, diagnose_final_cosine, diagnose_top_peaks",3,0.8026003276003276
+"fragments_score, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.8026003276003276
+"fragments_score, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered",4,0.8024979524979525
+"fragments_correlation, fragments_rawcos, diagnose_area_covered, diagnose_top_peaks",4,0.8022932022932023
+"fragments_score, fragments_coverage, diagnose_top_peaks",3,0.8020679770679771
+"fragments_score, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.8020679770679771
+"fragments_score, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.8020475020475021
+"fragments_score, fragments_rawcos, diagnose_top_peaks",3,0.8017199017199017
+"fragments_score, fragments_rawcos, fragments_unexplained, diagnose_top_peaks",4,0.8017199017199017
+"fragments_score, fragments_rawcos, fragments_coverage",3,0.8015970515970516
+"fragments_score, fragments_rawcos, fragments_coverage, fragments_unexplained",4,0.8015970515970516
+"fragments_correlation, fragments_css, fragments_coverage",3,0.8015561015561016
+"fragments_score, fragments_css, diagnose_final_cosine, diagnose_top_peaks",4,0.8014127764127764
+"fragments_correlation, fragments_rawcos, fragments_css, diagnose_top_peaks",4,0.8013513513513514
+"fragments_score, fragments_rawcos, diagnose_area_covered, diagnose_top_peaks",4,0.8011875511875511
+"fragments_score, fragments_rawcos",2,0.8011466011466012
+"fragments_css, diagnose_raw_cosine, diagnose_top_peaks",3,0.8011466011466012
+"fragments_score, fragments_rawcos, fragments_unexplained",3,0.8011466011466012
+"fragments_css, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.8011466011466012
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered",4,0.800941850941851
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",3,0.8008599508599509
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, fragments_css",4,0.8006142506142506
+"fragments_score, fragments_correlation, fragments_rawcos, diagnose_final_cosine",4,0.8004095004095004
+"fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.8004095004095004
+"fragments_score, fragments_rawcos, fragments_css, diagnose_top_peaks",4,0.8
+"fragments_score, fragments_rawcos, diagnose_final_cosine, diagnose_top_peaks",4,0.7998771498771499
+"fragments_score, fragments_rawcos, fragments_pc_missing_peaks, diagnose_area_covered",4,0.7998771498771499
+"diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",3,0.7997542997542998
+"fragments_score, fragments_correlation, fragments_coverage",3,0.7997542997542998
+"fragments_score, fragments_correlation, fragments_coverage, fragments_unexplained",4,0.7997542997542998
+"fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7997542997542998
+"fragments_correlation, fragments_coverage, fragments_unexplained",3,0.7995495495495496
+"fragments_rawcos, fragments_unexplained, diagnose_raw_cosine, diagnose_top_peaks",4,0.7992628992628993
+"fragments_rawcos, diagnose_raw_cosine, diagnose_top_peaks",3,0.7992219492219492
+"fragments_score, diagnose_area_covered, diagnose_top_peaks",3,0.7991605241605242
+"fragments_score, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7991605241605242
+"fragments_correlation, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.7988533988533989
+"fragments_score, fragments_css, fragments_coverage, diagnose_top_peaks",4,0.7986486486486486
+"fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.7986486486486486
+"diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",3,0.7986076986076986
+"fragments_correlation, fragments_rawcos, diagnose_final_cosine, diagnose_top_peaks",4,0.7985257985257985
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.7984848484848485
+"diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7983210483210483
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_area_covered, diagnose_top_peaks",4,0.7981162981162981
+"fragments_score, fragments_rawcos, fragments_css, fragments_coverage",4,0.7980753480753481
+"fragments_score, fragments_pc_missing_peaks, diagnose_final_cosine",3,0.798034398034398
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine",4,0.798034398034398
+"fragments_css, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.797993447993448
+"fragments_pc_missing_peaks, diagnose_final_cosine, diagnose_area_covered",3,0.797911547911548
+"fragments_score, fragments_css, fragments_unexplained, diagnose_top_peaks",4,0.7978705978705979
+"fragments_score, fragments_css, diagnose_top_peaks",3,0.7978296478296478
+"fragments_score, fragments_rawcos, fragments_coverage, diagnose_final_cosine",4,0.7977477477477477
+"fragments_correlation, fragments_coverage, diagnose_area_covered",3,0.7977067977067978
+"fragments_correlation, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.7977067977067978
+"fragments_css, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.7976248976248976
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.7976248976248976
+"fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine, diagnose_area_covered",4,0.7975839475839476
+"fragments_score, fragments_rawcos, fragments_coverage, diagnose_area_covered",4,0.7975020475020475
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.7974201474201474
+"fragments_score, fragments_rawcos, fragments_css",3,0.7972563472563473
+"fragments_score, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.7972563472563473
+"fragments_score, fragments_rawcos, fragments_css, fragments_unexplained",4,0.7972563472563473
+"fragments_css, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7971744471744472
+"fragments_score, fragments_correlation, fragments_coverage, diagnose_area_covered",4,0.7970925470925471
+"fragments_score, fragments_correlation, fragments_css, fragments_coverage",4,0.7970925470925471
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_final_cosine",3,0.7968058968058968
+"fragments_score, fragments_rawcos, diagnose_area_covered",3,0.7968058968058968
+"fragments_score, fragments_rawcos, fragments_unexplained, diagnose_area_covered",4,0.7968058968058968
+"fragments_score, fragments_rawcos, diagnose_final_cosine",3,0.7966830466830467
+"fragments_correlation, fragments_css, fragments_coverage, diagnose_area_covered",4,0.7966830466830467
+"fragments_score, fragments_rawcos, fragments_unexplained, diagnose_final_cosine",4,0.7966830466830467
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine",4,0.7965601965601966
+"fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css, diagnose_top_peaks",4,0.7964782964782965
+"fragments_score, fragments_rawcos, fragments_css, diagnose_final_cosine",4,0.7964782964782965
+"fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine, diagnose_top_peaks",4,0.7963963963963964
+"fragments_score, fragments_css, diagnose_area_covered, diagnose_top_peaks",4,0.7963963963963964
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine",4,0.7963554463554463
+"fragments_score, fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine",4,0.7962940212940213
+"fragments_rawcos, fragments_css, diagnose_raw_cosine, diagnose_top_peaks",4,0.795986895986896
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.7954954954954955
+"fragments_correlation, fragments_css, fragments_coverage, fragments_unexplained",4,0.7953726453726454
+diagnose_raw_cosine,1,0.7953316953316953
+"fragments_correlation, fragments_coverage, diagnose_final_cosine",3,0.7952907452907453
+"fragments_rawcos, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.7952907452907453
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine",4,0.7952907452907453
+"fragments_pc_missing_peaks, diagnose_area_covered, diagnose_top_peaks",3,0.795045045045045
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.7948402948402948
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine",4,0.7947583947583947
+"fragments_rawcos, diagnose_raw_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7943898443898444
+"fragments_score, fragments_rawcos, diagnose_final_cosine, diagnose_area_covered",4,0.7943079443079443
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7941031941031941
+"fragments_rawcos, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.793980343980344
+"diagnose_raw_cosine, diagnose_isodec_css",2,0.793939393939394
+"fragments_score, fragments_rawcos, fragments_css, diagnose_area_covered",4,0.793939393939394
+"fragments_rawcos, fragments_coverage, diagnose_top_peaks",3,0.7936936936936937
+"fragments_score, fragments_correlation, fragments_coverage, diagnose_final_cosine",4,0.7936117936117936
+"fragments_correlation, fragments_css, fragments_coverage, diagnose_final_cosine",4,0.7934070434070434
+"fragments_correlation, diagnose_final_cosine, diagnose_top_peaks",3,0.7933660933660933
+"fragments_correlation, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.7933660933660933
+"fragments_score, fragments_correlation",2,0.7933251433251434
+"fragments_score, fragments_correlation, fragments_unexplained",3,0.7933251433251434
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",3,0.793038493038493
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered",4,0.792997542997543
+"fragments_score, fragments_pc_missing_peaks, diagnose_area_covered",3,0.7929565929565929
+"fragments_correlation, diagnose_top_peaks",2,0.7927927927927928
+"fragments_correlation, fragments_unexplained, diagnose_top_peaks",3,0.7927927927927928
+"fragments_pc_missing_peaks, fragments_css, diagnose_area_covered, diagnose_top_peaks",4,0.7927108927108927
+"fragments_rawcos, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.7926289926289927
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered",4,0.7926289926289927
+"fragments_score, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.7925880425880426
+"diagnose_raw_cosine, diagnose_area_covered",2,0.7924651924651924
+fragments_score,1,0.7923423423423424
+"fragments_score, fragments_unexplained",2,0.7923423423423424
+"fragments_css, fragments_coverage, diagnose_top_peaks",3,0.7923423423423424
+"fragments_correlation, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.7922604422604422
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage",3,0.792014742014742
+"fragments_score, fragments_pc_missing_peaks",2,0.7919737919737919
+"fragments_score, fragments_pc_missing_peaks, fragments_unexplained",3,0.7919737919737919
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained, diagnose_top_peaks",4,0.7919737919737919
+"fragments_score, fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained",4,0.7919737919737919
+"fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css",3,0.7918918918918919
+"fragments_rawcos, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.7916871416871417
+"fragments_correlation, fragments_rawcos",2,0.7916461916461917
+"fragments_score, fragments_correlation, diagnose_area_covered",3,0.7916461916461917
+"fragments_score, fragments_correlation, fragments_css",3,0.7916461916461917
+"fragments_score, fragments_correlation, fragments_css, fragments_unexplained",4,0.7916461916461917
+"fragments_score, fragments_correlation, fragments_unexplained, diagnose_area_covered",4,0.7916461916461917
+"fragments_score, fragments_coverage",2,0.7916052416052416
+"fragments_correlation, fragments_css, diagnose_top_peaks",3,0.7916052416052416
+"fragments_score, fragments_coverage, fragments_unexplained",3,0.7916052416052416
+"fragments_correlation, fragments_css, fragments_unexplained, diagnose_top_peaks",4,0.7916052416052416
+"fragments_rawcos, fragments_coverage, diagnose_final_cosine",3,0.7915233415233415
+"fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",3,0.7914823914823915
+"fragments_correlation, fragments_css, diagnose_final_cosine, diagnose_top_peaks",4,0.7913595413595413
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, diagnose_top_peaks",4,0.7913185913185913
+"fragments_correlation, diagnose_area_covered, diagnose_top_peaks",3,0.7912776412776413
+"fragments_correlation, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7912776412776413
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, diagnose_top_peaks",4,0.7912776412776413
+"fragments_rawcos, fragments_css, fragments_coverage, diagnose_top_peaks",4,0.7911957411957412
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, diagnose_top_peaks",4,0.7911547911547911
+"fragments_score, fragments_pc_missing_peaks, fragments_css, diagnose_area_covered",4,0.7911138411138411
+"fragments_css, diagnose_raw_cosine, diagnose_isodec_css",3,0.791072891072891
+"fragments_coverage, diagnose_final_cosine, diagnose_area_covered",3,0.7910319410319411
+"fragments_coverage, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.7910319410319411
+"fragments_css, diagnose_raw_cosine",2,0.790990990990991
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_top_peaks",3,0.790990990990991
+"fragments_unexplained, diagnose_raw_cosine",2,0.7906224406224406
+"fragments_score, fragments_coverage, diagnose_final_cosine",3,0.7906224406224406
+"fragments_score, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.7906224406224406
+"fragments_correlation, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7904995904995905
+"fragments_score, fragments_pc_missing_peaks, fragments_css",3,0.7902948402948403
+"fragments_score, fragments_pc_missing_peaks, fragments_css, fragments_coverage",4,0.7902538902538903
+"fragments_score, fragments_pc_missing_peaks, fragments_css, fragments_unexplained",4,0.7902538902538903
+"fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",3,0.7898443898443899
+"fragments_css, fragments_coverage, diagnose_final_cosine, diagnose_area_covered",4,0.7898034398034398
+"fragments_score, fragments_correlation, diagnose_final_cosine",3,0.7897215397215397
+"fragments_css, fragments_coverage, diagnose_area_covered, diagnose_top_peaks",4,0.7897215397215397
+"fragments_score, fragments_correlation, fragments_unexplained, diagnose_final_cosine",4,0.7897215397215397
+"fragments_css, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.7896396396396397
+"fragments_css, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.7894348894348895
+"fragments_score, fragments_correlation, fragments_css, diagnose_area_covered",4,0.7894348894348895
+"fragments_correlation, fragments_rawcos, fragments_unexplained",3,0.789066339066339
+"fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.789066339066339
+"diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",3,0.788943488943489
+"fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.7888615888615889
+"fragments_rawcos, diagnose_raw_cosine",2,0.7887387387387388
+"fragments_rawcos, fragments_css, fragments_coverage, diagnose_final_cosine",4,0.7887387387387388
+"fragments_score, fragments_unexplained, diagnose_final_cosine",3,0.7886568386568387
+"fragments_score, diagnose_final_cosine",2,0.7886158886158886
+"fragments_rawcos, fragments_css, diagnose_raw_cosine, diagnose_isodec_css",4,0.7886158886158886
+"fragments_score, fragments_css, fragments_coverage, diagnose_final_cosine",4,0.7886158886158886
+"fragments_score, fragments_correlation, fragments_css, diagnose_final_cosine",4,0.7885954135954136
+"fragments_css, diagnose_raw_cosine, diagnose_area_covered",3,0.7884930384930385
+"fragments_correlation, fragments_rawcos, fragments_css",3,0.7882882882882883
+"fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css, diagnose_area_covered",4,0.7882882882882883
+"fragments_pc_missing_peaks, fragments_css, diagnose_top_peaks",3,0.7882063882063882
+"fragments_score, diagnose_area_covered",2,0.7880425880425881
+"fragments_score, fragments_unexplained, diagnose_area_covered",3,0.7880425880425881
+"fragments_score, fragments_correlation, diagnose_final_cosine, diagnose_area_covered",4,0.7880425880425881
+"fragments_correlation, fragments_css, diagnose_area_covered, diagnose_top_peaks",4,0.7877559377559378
+"fragments_css, fragments_unexplained, diagnose_raw_cosine",3,0.7876740376740377
+"fragments_score, diagnose_final_cosine, diagnose_area_covered",3,0.7876330876330876
+"fragments_score, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.7876330876330876
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained, diagnose_top_peaks",4,0.7875921375921376
+"fragments_coverage, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7874283374283374
+"fragments_coverage, diagnose_area_covered, diagnose_top_peaks",3,0.7873464373464374
+"fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.7873054873054873
+"diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7871826371826371
+"fragments_css, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.7871007371007371
+"fragments_score, fragments_css, diagnose_final_cosine",3,0.787039312039312
+"fragments_score, fragments_css, fragments_unexplained, diagnose_final_cosine",4,0.787039312039312
+"fragments_css, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.7867321867321867
+"fragments_score, fragments_css",2,0.7865274365274365
+"fragments_score, fragments_css, fragments_unexplained",3,0.7865274365274365
+"fragments_score, fragments_coverage, diagnose_area_covered",3,0.7864455364455365
+"fragments_score, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.7864455364455365
+"fragments_score, fragments_css, diagnose_final_cosine, diagnose_area_covered",4,0.7864045864045864
+"fragments_css, diagnose_isodec_css, diagnose_final_cosine, diagnose_top_peaks",4,0.7863226863226863
+"fragments_rawcos, fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css",4,0.7863226863226863
+"fragments_rawcos, fragments_coverage, diagnose_area_covered",3,0.7861998361998362
+"fragments_score, fragments_css, fragments_coverage",3,0.7861998361998362
+"fragments_score, fragments_css, fragments_coverage, fragments_unexplained",4,0.7861998361998362
+"fragments_css, diagnose_isodec_css, diagnose_top_peaks",3,0.7861179361179361
+"fragments_rawcos, fragments_css, diagnose_raw_cosine",3,0.785954135954136
+"fragments_rawcos, fragments_coverage, fragments_unexplained",3,0.7859131859131859
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_final_cosine",3,0.7858108108108108
+"fragments_correlation, fragments_rawcos, fragments_css, fragments_unexplained",4,0.7856674856674857
+"fragments_rawcos, diagnose_raw_cosine, diagnose_area_covered",3,0.7850532350532351
+"fragments_pc_missing_peaks, diagnose_final_cosine",2,0.7848075348075348
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.7847256347256347
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered",4,0.7846027846027847
+"fragments_correlation, fragments_rawcos, diagnose_area_covered",3,0.7844389844389844
+"fragments_correlation, fragments_rawcos, fragments_unexplained, diagnose_area_covered",4,0.7843980343980343
+"fragments_rawcos, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.7843161343161343
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_final_cosine",3,0.7841113841113841
+"diagnose_isodec_css, diagnose_top_peaks",2,0.7840704340704341
+"fragments_rawcos, fragments_css, fragments_coverage, diagnose_area_covered",4,0.7839475839475839
+"diagnose_raw_cosine, diagnose_final_cosine",2,0.783906633906634
+"fragments_pc_missing_peaks, fragments_css, diagnose_final_cosine",3,0.783906633906634
+"fragments_rawcos, fragments_unexplained, diagnose_raw_cosine",3,0.783906633906634
+"fragments_score, fragments_css, diagnose_area_covered",3,0.7838656838656839
+"fragments_score, fragments_css, fragments_unexplained, diagnose_area_covered",4,0.7838656838656839
+"fragments_rawcos, fragments_css, fragments_coverage, fragments_unexplained",4,0.7837428337428337
+"fragments_score, fragments_css, fragments_coverage, diagnose_area_covered",4,0.7833742833742834
+"diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",3,0.7833333333333333
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, diagnose_final_cosine",4,0.7833333333333333
+"fragments_rawcos, fragments_unexplained, diagnose_raw_cosine, diagnose_area_covered",4,0.7832104832104833
+"fragments_css, diagnose_raw_cosine, diagnose_final_cosine",3,0.783005733005733
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",3,0.782964782964783
+"fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine",3,0.7826371826371826
+"fragments_css, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.7823914823914824
+"fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.7823914823914824
+"fragments_css, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.7823095823095824
+"fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",3,0.7822686322686323
+"fragments_rawcos, fragments_css, fragments_unexplained, diagnose_raw_cosine",4,0.7821867321867322
+"diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.7821048321048321
+"fragments_css, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.782022932022932
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained, diagnose_final_cosine",4,0.781981981981982
+"fragments_rawcos, fragments_css, diagnose_raw_cosine, diagnose_area_covered",4,0.7818591318591318
+"fragments_coverage, fragments_unexplained, diagnose_final_cosine",3,0.7818181818181819
+"fragments_coverage, diagnose_final_cosine",2,0.7817977067977068
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered",4,0.7817772317772318
+"fragments_rawcos, fragments_css, diagnose_raw_cosine, diagnose_final_cosine",4,0.7816953316953317
+"fragments_css, fragments_coverage, diagnose_final_cosine",3,0.7814496314496314
+"fragments_rawcos, fragments_pc_missing_peaks, diagnose_area_covered",3,0.7814496314496314
+"fragments_correlation, fragments_rawcos, fragments_css, diagnose_area_covered",4,0.7814496314496314
+"fragments_rawcos, fragments_css, diagnose_isodec_css, diagnose_top_peaks",4,0.7814496314496314
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained",4,0.7814496314496314
+"fragments_css, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.7814086814086814
+"fragments_css, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.7812448812448812
+"fragments_correlation, fragments_rawcos, diagnose_final_cosine",3,0.7811220311220312
+"fragments_rawcos, fragments_unexplained, diagnose_raw_cosine, diagnose_final_cosine",4,0.7811220311220312
+"fragments_css, fragments_coverage, fragments_unexplained, diagnose_final_cosine",4,0.780999180999181
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained, diagnose_top_peaks",4,0.7806920556920557
+"fragments_rawcos, diagnose_raw_cosine, diagnose_final_cosine, diagnose_area_covered",4,0.7806306306306307
+"fragments_unexplained, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.7805896805896806
+"fragments_rawcos, diagnose_isodec_css, diagnose_top_peaks",3,0.7804258804258805
+"fragments_rawcos, fragments_css, fragments_coverage",3,0.78005733005733
+"diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",3,0.78001638001638
+"fragments_rawcos, diagnose_raw_cosine, diagnose_isodec_css, diagnose_final_cosine",4,0.7798525798525798
+"fragments_correlation, fragments_rawcos, diagnose_final_cosine, diagnose_area_covered",4,0.7796887796887797
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_top_peaks",3,0.7795659295659295
+"fragments_correlation, fragments_rawcos, fragments_css, diagnose_final_cosine",4,0.7792792792792793
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, diagnose_area_covered",4,0.7791564291564291
+"fragments_correlation, fragments_rawcos, fragments_unexplained, diagnose_final_cosine",4,0.7790335790335791
+"fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",3,0.7788697788697788
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_top_peaks",3,0.7785217035217035
+"fragments_unexplained, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.7778869778869779
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_unexplained",3,0.7777231777231777
+"fragments_rawcos, fragments_coverage",2,0.7776412776412777
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, fragments_unexplained",4,0.7768632268632268
+"fragments_css, diagnose_isodec_css",2,0.7766994266994267
+"fragments_rawcos, diagnose_isodec_css, diagnose_area_covered, diagnose_top_peaks",4,0.7766175266175266
+"fragments_css, fragments_coverage",2,0.7753890253890254
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css, fragments_coverage",4,0.774938574938575
+"fragments_rawcos, fragments_unexplained, diagnose_isodec_css, diagnose_top_peaks",4,0.7747338247338247
+diagnose_isodec_css,1,0.7743652743652744
+"fragments_css, fragments_coverage, fragments_unexplained",3,0.7743243243243243
+"diagnose_isodec_css, diagnose_final_cosine",2,0.774078624078624
+"fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine",3,0.7737919737919738
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, diagnose_area_covered",4,0.7734234234234234
+"diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",3,0.7730958230958231
+"diagnose_isodec_css, diagnose_area_covered",2,0.7728091728091728
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_css",3,0.7726453726453727
+"fragments_pc_missing_peaks, fragments_coverage, diagnose_area_covered",3,0.7720720720720721
+"fragments_rawcos, fragments_css, diagnose_isodec_css",3,0.7719082719082719
+"fragments_css, fragments_coverage, diagnose_area_covered",3,0.7718673218673219
+"fragments_rawcos, fragments_css, diagnose_isodec_css, diagnose_final_cosine",4,0.7718673218673219
+"fragments_css, diagnose_isodec_css, diagnose_area_covered",3,0.7718263718263718
+"fragments_css, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.7713349713349713
+"fragments_css, diagnose_isodec_css, diagnose_final_cosine",3,0.7712940212940212
+"fragments_rawcos, diagnose_final_cosine, diagnose_top_peaks",3,0.7712121212121212
+"fragments_rawcos, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.7712121212121212
+"fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",3,0.7710892710892711
+"fragments_rawcos, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.771007371007371
+"fragments_rawcos, diagnose_isodec_css",2,0.7706797706797707
+"fragments_rawcos, fragments_pc_missing_peaks, fragments_coverage",3,0.7703521703521704
+"fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine, diagnose_area_covered",4,0.7703521703521704
+"fragments_pc_missing_peaks, diagnose_top_peaks",2,0.7702907452907453
+"fragments_coverage, fragments_unexplained, diagnose_top_peaks",3,0.7702907452907453
+"fragments_rawcos, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.7702702702702703
+"fragments_css, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.76998361998362
+"fragments_pc_missing_peaks, diagnose_area_covered",2,0.7696969696969697
+"fragments_rawcos, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7687960687960688
+"fragments_coverage, diagnose_top_peaks",2,0.7684275184275184
+"fragments_unexplained, diagnose_isodec_css",2,0.7684275184275184
+"fragments_css, fragments_unexplained, diagnose_isodec_css, diagnose_final_cosine",4,0.7682637182637183
+"fragments_correlation, fragments_css",2,0.7681818181818182
+"fragments_css, fragments_unexplained, diagnose_isodec_css",3,0.767977067977068
+"fragments_rawcos, fragments_css, diagnose_final_cosine, diagnose_top_peaks",4,0.767977067977068
+"fragments_pc_missing_peaks, fragments_css, diagnose_area_covered",3,0.7678542178542178
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained, diagnose_area_covered",4,0.7678542178542178
+"fragments_rawcos, fragments_css, diagnose_isodec_css, diagnose_area_covered",4,0.7672809172809173
+"fragments_coverage, diagnose_area_covered",2,0.7667485667485667
+fragments_correlation,1,0.7667076167076167
+"fragments_rawcos, diagnose_isodec_css, diagnose_area_covered",3,0.7665028665028665
+"fragments_coverage, fragments_unexplained, diagnose_area_covered",3,0.7663800163800164
+"fragments_css, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.7653972153972154
+"fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",3,0.7652743652743653
+"fragments_pc_missing_peaks, fragments_unexplained, diagnose_area_covered",3,0.764987714987715
+"fragments_rawcos, fragments_pc_missing_peaks",2,0.7648648648648648
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained, diagnose_area_covered",4,0.7648648648648648
+"fragments_rawcos, fragments_css, fragments_unexplained, diagnose_isodec_css",4,0.7645372645372646
+"fragments_correlation, diagnose_final_cosine",2,0.7643939393939394
+"fragments_rawcos, fragments_unexplained, diagnose_isodec_css",3,0.7643325143325144
+"fragments_correlation, diagnose_final_cosine, diagnose_area_covered",3,0.7642915642915643
+"fragments_correlation, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.7642915642915643
+"fragments_correlation, fragments_css, diagnose_final_cosine",3,0.7636773136773137
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage, fragments_unexplained",4,0.7627354627354628
+"fragments_pc_missing_peaks, fragments_css, fragments_coverage",3,0.7623259623259623
+"fragments_css, diagnose_final_cosine, diagnose_top_peaks",3,0.7622850122850123
+"fragments_css, fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",4,0.7622440622440623
+"fragments_correlation, fragments_css, diagnose_final_cosine, diagnose_area_covered",4,0.761998361998362
+"diagnose_final_cosine, diagnose_top_peaks",2,0.7618959868959869
+"fragments_unexplained, diagnose_final_cosine, diagnose_top_peaks",3,0.7618959868959869
+"fragments_correlation, fragments_unexplained, diagnose_final_cosine",3,0.7611384111384112
+"diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",3,0.7605241605241605
+"fragments_unexplained, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7605241605241605
+"fragments_correlation, fragments_css, fragments_unexplained",3,0.7603603603603604
+"fragments_correlation, fragments_css, fragments_unexplained, diagnose_final_cosine",4,0.75999180999181
+"fragments_rawcos, fragments_unexplained, diagnose_isodec_css, diagnose_area_covered",4,0.7597461097461098
+"fragments_correlation, fragments_unexplained",2,0.7589271089271089
+"fragments_correlation, fragments_css, diagnose_area_covered",3,0.7583128583128583
+"fragments_correlation, fragments_css, fragments_unexplained, diagnose_area_covered",4,0.7583128583128583
+"fragments_correlation, fragments_unexplained, diagnose_area_covered",3,0.7582719082719083
+"fragments_correlation, diagnose_area_covered",2,0.7582309582309582
+"fragments_css, diagnose_final_cosine, diagnose_area_covered, diagnose_top_peaks",4,0.7575348075348075
+"fragments_pc_missing_peaks, fragments_css, fragments_unexplained",3,0.7573710073710074
+"fragments_css, diagnose_top_peaks",2,0.7547092547092548
+"fragments_pc_missing_peaks, fragments_css",2,0.7536036036036036
+"fragments_css, fragments_unexplained, diagnose_top_peaks",3,0.7516380016380017
+"fragments_rawcos, fragments_css, diagnose_top_peaks",3,0.7512694512694512
+"fragments_coverage, fragments_unexplained",2,0.7510237510237511
+"fragments_rawcos, diagnose_final_cosine",2,0.7500409500409501
+"fragments_rawcos, diagnose_final_cosine, diagnose_area_covered",3,0.7483619983619983
+"fragments_rawcos, fragments_css, fragments_unexplained, diagnose_top_peaks",4,0.7482391482391483
+"fragments_rawcos, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.747952497952498
+"fragments_rawcos, fragments_unexplained, diagnose_final_cosine",3,0.7468058968058968
+"fragments_rawcos, fragments_css, diagnose_final_cosine, diagnose_area_covered",4,0.7463144963144963
+"fragments_rawcos, fragments_css, diagnose_final_cosine",3,0.7461097461097461
+fragments_css,1,0.7459868959868959
+"fragments_pc_missing_peaks, fragments_coverage, fragments_unexplained",3,0.7454954954954955
+"fragments_rawcos, fragments_css, diagnose_area_covered, diagnose_top_peaks",4,0.7437755937755938
+"fragments_rawcos, diagnose_top_peaks",2,0.7437346437346437
+"fragments_rawcos, fragments_css, fragments_unexplained, diagnose_final_cosine",4,0.7427927927927928
+"fragments_css, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7405405405405405
+"fragments_css, diagnose_area_covered, diagnose_top_peaks",3,0.7404995904995905
+"fragments_rawcos, diagnose_area_covered, diagnose_top_peaks",3,0.7377149877149877
+"fragments_rawcos, fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",4,0.7377149877149877
+"fragments_pc_missing_peaks, fragments_unexplained",2,0.7352989352989353
+"fragments_rawcos, fragments_unexplained, diagnose_top_peaks",3,0.7352989352989353
+"fragments_css, diagnose_final_cosine",2,0.735053235053235
+"diagnose_final_cosine, diagnose_area_covered",2,0.7346437346437347
+"fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",3,0.7346027846027846
+"fragments_css, fragments_unexplained, diagnose_final_cosine, diagnose_area_covered",4,0.7323505323505324
+"fragments_css, diagnose_final_cosine, diagnose_area_covered",3,0.7323095823095823
+"fragments_rawcos, fragments_css",2,0.731040131040131
+"fragments_css, fragments_unexplained, diagnose_final_cosine",3,0.7234643734643734
+diagnose_final_cosine,1,0.7221949221949222
+"fragments_rawcos, fragments_css, diagnose_area_covered",3,0.722072072072072
+"fragments_unexplained, diagnose_final_cosine",2,0.7209664209664209
+"fragments_rawcos, fragments_css, fragments_unexplained",3,0.7201883701883702
+"fragments_css, fragments_unexplained",2,0.7191236691236691
+"fragments_rawcos, fragments_css, fragments_unexplained, diagnose_area_covered",4,0.7185913185913186
+fragments_rawcos,1,0.7171990171990172
+"fragments_pc_missing_peaks, fragments_coverage",2,0.7144553644553645
+"fragments_rawcos, diagnose_area_covered",2,0.7126945126945127
+"fragments_rawcos, fragments_unexplained, diagnose_area_covered",3,0.709009009009009
+"fragments_css, diagnose_area_covered",2,0.7076167076167076
+"fragments_css, fragments_unexplained, diagnose_area_covered",3,0.7076167076167076
+"fragments_rawcos, fragments_unexplained",2,0.7051187551187551
+fragments_pc_missing_peaks,1,0.7043611793611794
+fragments_coverage,1,0.7042178542178542
+"diagnose_area_covered, diagnose_top_peaks",2,0.697010647010647
+"fragments_unexplained, diagnose_area_covered, diagnose_top_peaks",3,0.697010647010647
+"fragments_unexplained, diagnose_top_peaks",2,0.6417485667485667
+diagnose_area_covered,1,0.6412366912366912
+"fragments_unexplained, diagnose_area_covered",2,0.6412366912366912
+diagnose_top_peaks,1,0.5946355446355447
+fragments_unexplained,1,0.5735053235053235
