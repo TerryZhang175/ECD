@@ -204,6 +204,13 @@ FRAG_SCORE_PENALTY_MISSING_CORE = 0.25
 FRAG_SCORE_PENALTY_MISSING_PEAKS = 0.10
 FRAG_SCORE_PENALTY_MASS_ERROR_STD = 0.10
 
+# Optional truth-like score derived from Q10R manual labels.
+# Keep disabled by default; when enabled, 0.85 gave the best Q10R end-to-end F1
+# among the thresholds tested so far.
+FRAG_TRUTH_SCORE_ENABLE = False
+FRAG_TRUTH_SCORE_THRESHOLD = 0.85
+FRAG_TRUTH_SCORE_USE_FOR_RANKING = True
+
 # Anchor mode: which peak in the theoretical isotope envelope to align against the observed spectrum.
 #   "most_intense" — align to the peak with the highest theoretical intensity (default, original behaviour)
 #   "monoisotopic" — align to the monoisotopic (first / lowest m/z) peak

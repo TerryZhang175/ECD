@@ -26,6 +26,10 @@ def _as_float(value: Optional[object], default: float) -> float:
 def variant_rank_key_from_result(result: dict) -> tuple[float, float, float]:
     css = result.get("final_cosine")
     if css is None:
+        css = result.get("selection_score")
+    if css is None:
+        css = result.get("truth_score")
+    if css is None:
         css = result.get("score")
     if css is None:
         css = result.get("raw_cosine_preanchor")

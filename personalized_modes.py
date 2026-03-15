@@ -1217,6 +1217,106 @@ def _fragment_noise_core_components(
     }
 
 
+def _fragment_isodec_detail(
+    *,
+    local_centroids: np.ndarray,
+    dist_plot: np.ndarray,
+    z: int,
+    isodec_config,
+) -> dict:
+    detail = {
+        "matched_peaks_n": 0,
+        "minpeaks_effective": int(getattr(isodec_config, "minpeaks", 0) or 0) if isodec_config is not None else 0,
+        "areacovered": 0.0,
+        "topthree": False,
+    }
+    if (
+        cfg.isodec_find_matches is None
+        or not isinstance(local_centroids, np.ndarray)
+        or local_centroids.size == 0
+        or not isinstance(dist_plot, np.ndarray)
+        or dist_plot.size == 0
+        or isodec_config is None
+    ):
+        return detail
+
+    matchedindexes, isomatches = cfg.isodec_find_matches(
+        local_centroids,
+        dist_plot,
+        float(isodec_config.matchtol),
+    )
+    matched_peaks_n = int(len(matchedindexes))
+    minpeaks_eff = int(getattr(isodec_config, "minpeaks", 0) or 0)
+
+    if int(z) == 1 and matched_peaks_n == 2 and len(isomatches) == 2:
+        if isomatches[0] == 0 and isomatches[1] == 1:
+            int1 = float(local_centroids[matchedindexes[0], 1])
+            int2 = float(local_centroids[matchedindexes[1], 1])
+            ratio = (int2 / int1) if int1 != 0 else 0.0
+            if float(isodec_config.plusoneintwindowlb) < ratio < float(isodec_config.plusoneintwindowub):
+                minpeaks_eff = 2
+
+    mi = np.array(matchedindexes, dtype=int) if len(matchedindexes) else np.array([], dtype=int)
+    ii = np.array(isomatches, dtype=int) if len(isomatches) else np.array([], dtype=int)
+    matchedcentroids = local_centroids[mi] if mi.size else np.empty((0, 2), dtype=float)
+    matchediso = dist_plot[ii] if ii.size else np.empty((0, 2), dtype=float)
+
+    areacovered = (
+        float(np.sum(matchediso[:, 1])) / float(np.sum(local_centroids[:, 1]))
+        if local_centroids.size and np.sum(local_centroids[:, 1]) > 0
+        else 0.0
+    )
+    topn = int(minpeaks_eff)
+    topthree = False
+    if local_centroids.size and matchedcentroids.size and topn > 0:
+        top_iso = np.sort(matchedcentroids[:, 1])[::-1][:topn]
+        top_cent = np.sort(local_centroids[:, 1])[::-1][:topn]
+        topthree = bool(np.array_equal(top_iso, top_cent))
+
+    detail.update(
+        {
+            "matched_peaks_n": matched_peaks_n,
+            "minpeaks_effective": int(minpeaks_eff),
+            "areacovered": float(areacovered),
+            "topthree": bool(topthree),
+        }
+    )
+    return detail
+
+
+def _fragment_truth_score(
+    *,
+    correlation_coefficient: float,
+    pc_missing_peaks: float,
+    isodec_css: float,
+    top_peaks: bool | float | int,
+) -> tuple[float | None, float | None]:
+    values = [
+        correlation_coefficient,
+        pc_missing_peaks,
+        isodec_css,
+        float(top_peaks) if top_peaks is not None else None,
+    ]
+    if any(value is None or not np.isfinite(float(value)) for value in values):
+        return None, None
+
+    z_corr = (float(correlation_coefficient) - 0.7568201889847942) / 0.24197271755281535
+    z_pc_missing = (28.699328693056465 - float(pc_missing_peaks)) / 24.234497548756174
+    z_css = (float(isodec_css) - 0.8372419143663081) / 0.14986324501779563
+    z_top = (float(top_peaks) - 0.5159235668789809) / 0.5005440559698912
+
+    logit = (
+        (0.872 * z_corr)
+        + (0.933 * z_pc_missing)
+        + (0.781 * z_css)
+        + (0.503 * z_top)
+        + 0.520
+    )
+    clipped = float(np.clip(logit, -40.0, 40.0))
+    prob = float(1.0 / (1.0 + np.exp(-clipped)))
+    return clipped, prob
+
+
 def run_charge_reduced_headless(residues, spectrum, isodec_config) -> dict:
     spectrum_copy = np.array(spectrum, dtype=float, copy=True)
     spectrum_mz = spectrum_copy[:, 0]
@@ -2070,7 +2170,18 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 dist_plot[:, 0] += obs_mz - anchor_theory_mz
                 dist_plot[:, 1] *= obs_int / float(np.max(dist_plot[:, 1]))
 
+                truth_score_enabled = bool(getattr(cfg, "FRAG_TRUTH_SCORE_ENABLE", False))
+                truth_score_threshold = float(getattr(cfg, "FRAG_TRUTH_SCORE_THRESHOLD", 0.85))
+                use_truth_score_for_ranking = bool(getattr(cfg, "FRAG_TRUTH_SCORE_USE_FOR_RANKING", True))
+
                 isodec_css = float(best_score)
+                isodec_accepted = True
+                isodec_detail = {
+                    "matched_peaks_n": 0,
+                    "minpeaks_effective": 0,
+                    "areacovered": 0.0,
+                    "topthree": False,
+                }
                 if cfg.ENABLE_ISODEC_RULES and isodec_config is not None:
                     local_centroids = get_local_centroids_window(
                         spectrum_mz,
@@ -2080,10 +2191,16 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         isodec_config.mzwindowub,
                         force_hill=bool(use_centroid_logic),
                     )
-                    accepted, isodec_css, shifted_peak = isodec_css_and_accept(
+                    isodec_accepted, isodec_css, shifted_peak = isodec_css_and_accept(
                         local_centroids, dist_plot, z=z, peakmz=obs_mz, config=isodec_config
                     )
-                    if not accepted:
+                    isodec_detail = _fragment_isodec_detail(
+                        local_centroids=local_centroids,
+                        dist_plot=dist_plot,
+                        z=int(z),
+                        isodec_config=isodec_config,
+                    )
+                    if (not isodec_accepted) and (not truth_score_enabled):
                         return None
                     if shifted_peak is not None:
                         old_obs_mz = obs_mz
@@ -2169,7 +2286,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     penalty_mass_error_std=float(score_penalty_mass_error_std),
                 )
 
-                accepted = bool(
+                legacy_accepted = bool(
                     float(isodec_css) >= float(cfg.MIN_COSINE)
                     and abs(float(ppm)) <= float(max_anchor_abs_ppm)
                     and len(local_matches) >= int(min_matched_peaks)
@@ -2182,19 +2299,38 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     and float(quality["missing_core_fraction"]) <= float(max_missing_core_frac)
                 )
                 if len(local_matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
-                    accepted = accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
+                    legacy_accepted = legacy_accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
                 if max_mass_error_std_ppm is not None and np.isfinite(float(quality["mass_error_std"])):
-                    accepted = accepted and float(quality["mass_error_std"]) <= float(max_mass_error_std_ppm)
+                    legacy_accepted = legacy_accepted and float(quality["mass_error_std"]) <= float(max_mass_error_std_ppm)
                 if min_correlation is not None and np.isfinite(float(quality["correlation_coefficient"])):
-                    accepted = accepted and float(quality["correlation_coefficient"]) >= float(min_correlation)
+                    legacy_accepted = legacy_accepted and float(quality["correlation_coefficient"]) >= float(min_correlation)
                 if max_chisq_stat is not None and np.isfinite(float(quality["chisq_stat"])):
-                    accepted = accepted and float(quality["chisq_stat"]) <= float(max_chisq_stat)
+                    legacy_accepted = legacy_accepted and float(quality["chisq_stat"]) <= float(max_chisq_stat)
+                truth_score_logit, truth_score = _fragment_truth_score(
+                    correlation_coefficient=float(quality["correlation_coefficient"]),
+                    pc_missing_peaks=float(quality["pc_missing_peaks"]),
+                    isodec_css=float(isodec_css),
+                    top_peaks=bool(isodec_detail.get("topthree", False)),
+                )
+                truth_score_accepted = bool(
+                    truth_score_enabled
+                    and truth_score is not None
+                    and float(truth_score) >= float(truth_score_threshold)
+                )
+                accepted = bool(legacy_accepted or truth_score_accepted)
                 if not accepted:
                     return None
 
                 frag_id = f"{frag_id_base}{loss_suffix}"
                 evidence_score = float(quality["evidence_score"])
-                label_parts = [f"{frag_id}^{z}+", f"{ppm:.1f} ppm", f"score={evidence_score:.3f}", f"css={isodec_css:.3f}"]
+                selection_score = (
+                    float(truth_score)
+                    if truth_score_enabled and use_truth_score_for_ranking and truth_score is not None
+                    else float(evidence_score)
+                )
+                label_parts = [f"{frag_id}^{z}+", f"{ppm:.1f} ppm", f"score={selection_score:.3f}", f"css={isodec_css:.3f}"]
+                if truth_score_enabled and truth_score is not None:
+                    label_parts.append(f"truth={truth_score:.3f}")
                 if best_model != "neutral":
                     h_pct = 100.0 * float(best_weights.get("+H", 0.0) + best_weights.get("-H", 0.0))
                     h2_pct = 100.0 * float(best_weights.get("+2H", 0.0) + best_weights.get("-2H", 0.0))
@@ -2220,10 +2356,17 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "anchor_theory_mz": float(anchor_theory_mz),
                     "ppm": float(ppm),
                     "score": float(evidence_score),
+                    "selection_score": float(selection_score),
+                    "truth_score": float(truth_score) if truth_score is not None else None,
+                    "truth_score_logit": float(truth_score_logit) if truth_score_logit is not None else None,
+                    "truth_score_accepted": bool(truth_score_accepted),
+                    "legacy_accepted": bool(legacy_accepted),
                     "css": float(isodec_css),
                     "composite_score": float(evidence_score),
                     "raw_score": float(best_score),
                     "neutral_score": float(neutral_score),
+                    "isodec_accepted": bool(isodec_accepted),
+                    "isodec_top_peaks": bool(isodec_detail.get("topthree", False)),
                     "coverage": float(comp["coverage"]),
                     "ppm_rmse": float(comp["ppm_rmse"]),
                     "ppm_consistency": float(comp["ppm_consistency"]),
@@ -2244,6 +2387,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "noise_level": float(quality["noise_level"]),
                     "s2n": float(quality["s2n"]),
                     "log_s2n": float(quality["log_s2n"]),
+                    "isodec_detail": isodec_detail,
                     "h_weights": best_weights,
                     "dist": dist_plot,
                     "label": label,
@@ -2352,8 +2496,8 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
             best_by_obs[key] = m
             continue
         cur = best_by_obs[key]
-        m_score = float(m.get("score", m.get("css", float("-inf"))))
-        cur_score = float(cur.get("score", cur.get("css", float("-inf"))))
+        m_score = float(m.get("selection_score", m.get("score", m.get("css", float("-inf")))))
+        cur_score = float(cur.get("selection_score", cur.get("score", cur.get("css", float("-inf")))))
         if (
             m_score > cur_score
             or (
@@ -2371,7 +2515,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
     best = list(best_by_obs.values())
     best.sort(
         key=lambda d: (
-            float(d.get("score", d.get("css", 0.0))),
+            float(d.get("selection_score", d.get("score", d.get("css", 0.0)))),
             float(d.get("coverage", 0.0)),
             float(d.get("css", 0.0)),
             d["obs_int"],
@@ -2387,6 +2531,7 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
             print(
                 f"{m['label']}\tI={m['obs_int']:.3g}\t"
                 f"anchor={m['anchor_theory_mz']:.4f}->{m['obs_mz']:.4f}\t"
+                f"sel={float(m.get('selection_score', m.get('score', 0.0))):.3f}\t"
                 f"cov={float(m.get('coverage', 0.0)):.3f}\t"
                 f"unexp={float(m.get('unexplained_fraction', 0.0)):.3f}\t"
                 f"fit={float(m.get('fit_score', 0.0)):.3f}\t"
@@ -2438,7 +2583,12 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         "obs_rel_int": m.get("obs_rel_int", ""),
                         "anchor_theory_mz": m.get("anchor_theory_mz", ""),
                         "anchor_ppm": m.get("ppm", ""),
+                        "selection_score": m.get("selection_score", ""),
                         "score": m.get("score", ""),
+                        "truth_score": m.get("truth_score", ""),
+                        "truth_score_logit": m.get("truth_score_logit", ""),
+                        "truth_score_accepted": m.get("truth_score_accepted", ""),
+                        "legacy_accepted": m.get("legacy_accepted", ""),
                         "css": m.get("css", ""),
                         "rawcos": m.get("raw_score", ""),
                         "cos0": m.get("neutral_score", ""),
@@ -2530,7 +2680,12 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     "obs_rel_int",
                     "anchor_theory_mz",
                     "anchor_ppm",
+                    "selection_score",
                     "score",
+                    "truth_score",
+                    "truth_score_logit",
+                    "truth_score_accepted",
+                    "legacy_accepted",
                     "css",
                     "rawcos",
                     "cos0",
