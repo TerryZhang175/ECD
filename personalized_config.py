@@ -171,7 +171,15 @@ AMIDATION_FORMULA = "H1N1O-1"
 
 REL_INTENSITY_CUTOFF = 0.01
 
-# Fragment scoring hardening: reduce false positives from noisy/co-eluting envelopes.
+# Fragment acceptance defaults.
+# Simplified from the previous multi-gate stack to keep only:
+# - anchor ppm sanity
+# - minimum local matched peaks
+# - IsoDec CSS
+# - fit score
+# - correlation
+# - percent missing peaks
+# Thresholds come from the Q10R truth analysis and are intentionally conservative.
 FRAG_MIN_MATCHED_PEAKS = 2
 FRAG_MIN_COVERAGE = 0.25
 FRAG_MAX_ANCHOR_ABS_PPM = None  # None => auto from MATCH_TOL_PPM
@@ -179,14 +187,15 @@ FRAG_MAX_RESIDUAL_RMSE_PPM = None  # None => auto from MATCH_TOL_PPM
 FRAG_PPM_SIGMA = None  # None => auto from MATCH_TOL_PPM
 FRAG_SPACING_SIGMA_DA = None  # None => auto from anchor m/z and MATCH_TOL_PPM
 FRAG_CORE_TOP_N = 3
+FRAG_MIN_ISODEC_CSS = 0.8072380238313257
 FRAG_MAX_UNEXPLAINED_FRAC = 0.70
 FRAG_MAX_MISSING_CORE_FRAC = 0.40
 FRAG_MIN_S2N = 0.0
 FRAG_MAX_INTERFERENCE = 1.0
-FRAG_MAX_PC_MISSING_PEAKS = 100.0
+FRAG_MAX_PC_MISSING_PEAKS = 52.94117647058824
 FRAG_MAX_MASS_ERROR_STD_PPM = None  # None => disabled
-FRAG_MIN_FIT_SCORE = 0.0
-FRAG_MIN_CORRELATION = None  # None => no hard gate
+FRAG_MIN_FIT_SCORE = 0.6056103460290946
+FRAG_MIN_CORRELATION = 0.8452132535239769
 FRAG_MAX_CHISQ_STAT = None  # None => no hard gate
 FRAG_NOISE_MODEL_SPLITS = 50
 FRAG_NOISE_HIST_BINS = 128

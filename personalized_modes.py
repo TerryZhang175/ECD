@@ -1871,34 +1871,22 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
     obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
     match_tol_ppm = float(cfg.MATCH_TOL_PPM)
     min_matched_peaks = max(1, int(getattr(cfg, "FRAG_MIN_MATCHED_PEAKS", 2)))
-    min_coverage = float(getattr(cfg, "FRAG_MIN_COVERAGE", 0.25))
     max_anchor_abs_ppm_cfg = getattr(cfg, "FRAG_MAX_ANCHOR_ABS_PPM", None)
     max_anchor_abs_ppm = float(max_anchor_abs_ppm_cfg) if max_anchor_abs_ppm_cfg is not None else (match_tol_ppm * 1.5)
-    max_residual_rmse_cfg = getattr(cfg, "FRAG_MAX_RESIDUAL_RMSE_PPM", None)
-    max_residual_rmse_ppm = (
-        float(max_residual_rmse_cfg) if max_residual_rmse_cfg is not None else float(match_tol_ppm)
-    )
-    max_mass_error_std_cfg = getattr(cfg, "FRAG_MAX_MASS_ERROR_STD_PPM", None)
-    max_mass_error_std_ppm = float(max_mass_error_std_cfg) if max_mass_error_std_cfg is not None else None
     ppm_sigma_cfg = getattr(cfg, "FRAG_PPM_SIGMA", None)
     ppm_sigma = float(ppm_sigma_cfg) if ppm_sigma_cfg is not None else float(match_tol_ppm)
     if ppm_sigma <= 0:
         ppm_sigma = max(match_tol_ppm, 1.0)
     spacing_sigma_cfg = getattr(cfg, "FRAG_SPACING_SIGMA_DA", None)
     core_top_n = max(1, int(getattr(cfg, "FRAG_CORE_TOP_N", 3)))
-    min_s2n = float(getattr(cfg, "FRAG_MIN_S2N", 2.0))
-    max_interference = float(getattr(cfg, "FRAG_MAX_INTERFERENCE", 0.85))
+    min_isodec_css = float(getattr(cfg, "FRAG_MIN_ISODEC_CSS", cfg.MIN_COSINE))
     max_pc_missing_peaks = float(getattr(cfg, "FRAG_MAX_PC_MISSING_PEAKS", 85.0))
     min_fit_score = float(getattr(cfg, "FRAG_MIN_FIT_SCORE", 0.35))
     min_correlation_cfg = getattr(cfg, "FRAG_MIN_CORRELATION", None)
     min_correlation = float(min_correlation_cfg) if min_correlation_cfg is not None else None
-    max_chisq_cfg = getattr(cfg, "FRAG_MAX_CHISQ_STAT", None)
-    max_chisq_stat = float(max_chisq_cfg) if max_chisq_cfg is not None else None
     noise_model_splits = max(4, int(getattr(cfg, "FRAG_NOISE_MODEL_SPLITS", 50)))
     noise_hist_bins = max(16, int(getattr(cfg, "FRAG_NOISE_HIST_BINS", 128)))
     s2n_score_scale = max(float(getattr(cfg, "FRAG_S2N_SCORE_SCALE", 4.0)), 1e-6)
-    max_unexplained_frac = float(getattr(cfg, "FRAG_MAX_UNEXPLAINED_FRAC", 0.70))
-    max_missing_core_frac = float(getattr(cfg, "FRAG_MAX_MISSING_CORE_FRAC", 0.40))
     score_w_css = float(getattr(cfg, "FRAG_SCORE_W_CSS", 0.40))
     score_w_cov = float(getattr(cfg, "FRAG_SCORE_W_COVERAGE", 0.20))
     score_w_ppm = float(getattr(cfg, "FRAG_SCORE_W_PPM", 0.15))
@@ -2286,26 +2274,17 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                     penalty_mass_error_std=float(score_penalty_mass_error_std),
                 )
 
+                # Simplified fragments gate: keep only the strongest Q10R-aligned quality
+                # signals plus basic physical sanity checks.
                 legacy_accepted = bool(
-                    float(isodec_css) >= float(cfg.MIN_COSINE)
+                    float(isodec_css) >= float(min_isodec_css)
                     and abs(float(ppm)) <= float(max_anchor_abs_ppm)
                     and len(local_matches) >= int(min_matched_peaks)
-                    and float(comp["coverage"]) >= float(min_coverage)
-                    and float(quality["s2n"]) >= float(min_s2n)
-                    and float(quality["interference"]) <= float(max_interference)
                     and float(quality["pc_missing_peaks"]) <= float(max_pc_missing_peaks)
                     and float(quality["fit_score"]) >= float(min_fit_score)
-                    and float(quality["unexplained_fraction"]) <= float(max_unexplained_frac)
-                    and float(quality["missing_core_fraction"]) <= float(max_missing_core_frac)
                 )
-                if len(local_matches) >= 2 and np.isfinite(comp["ppm_rmse"]):
-                    legacy_accepted = legacy_accepted and float(comp["ppm_rmse"]) <= float(max_residual_rmse_ppm)
-                if max_mass_error_std_ppm is not None and np.isfinite(float(quality["mass_error_std"])):
-                    legacy_accepted = legacy_accepted and float(quality["mass_error_std"]) <= float(max_mass_error_std_ppm)
                 if min_correlation is not None and np.isfinite(float(quality["correlation_coefficient"])):
                     legacy_accepted = legacy_accepted and float(quality["correlation_coefficient"]) >= float(min_correlation)
-                if max_chisq_stat is not None and np.isfinite(float(quality["chisq_stat"])):
-                    legacy_accepted = legacy_accepted and float(quality["chisq_stat"]) <= float(max_chisq_stat)
                 truth_score_logit, truth_score = _fragment_truth_score(
                     correlation_coefficient=float(quality["correlation_coefficient"]),
                     pc_missing_peaks=float(quality["pc_missing_peaks"]),
