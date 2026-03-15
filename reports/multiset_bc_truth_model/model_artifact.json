@@ -1,0 +1,99 @@
+{
+  "features": [
+    "fragments_css",
+    "fragments_rawcos",
+    "fragments_fit_score",
+    "fragments_correlation",
+    "fragments_pc_missing_peaks",
+    "fragments_match_count",
+    "fragments_abs_anchor_ppm",
+    "diagnose_isodec_css",
+    "diagnose_raw_cosine",
+    "diagnose_matched_peaks",
+    "diagnose_area_covered",
+    "diagnose_top_peaks"
+  ],
+  "best_model": "random_forest",
+  "models": {
+    "logistic_regression": {
+      "model_name": "logistic_regression",
+      "features": [
+        "fragments_css",
+        "fragments_rawcos",
+        "fragments_fit_score",
+        "fragments_correlation",
+        "fragments_pc_missing_peaks",
+        "fragments_match_count",
+        "fragments_abs_anchor_ppm",
+        "diagnose_isodec_css",
+        "diagnose_raw_cosine",
+        "diagnose_matched_peaks",
+        "diagnose_area_covered",
+        "diagnose_top_peaks"
+      ],
+      "intercept": 0.2596288602696825,
+      "feature_importance_type": "coefficient",
+      "feature_values": {
+        "fragments_css": -0.8419993470792826,
+        "fragments_rawcos": -0.03203763495029977,
+        "fragments_fit_score": 0.5711933256340488,
+        "fragments_correlation": -0.7989603357673833,
+        "fragments_pc_missing_peaks": 0.11184049592515403,
+        "fragments_match_count": 0.040320478505048156,
+        "fragments_abs_anchor_ppm": -0.573177811508023,
+        "diagnose_isodec_css": 0.2580015250445758,
+        "diagnose_raw_cosine": -0.4650230133977746,
+        "diagnose_matched_peaks": -0.019047507012010224,
+        "diagnose_area_covered": 0.6771619363098581,
+        "diagnose_top_peaks": 0.39332941401043525
+      },
+      "model_path": "reports/multiset_bc_truth_model/models/logistic_regression.joblib",
+      "scan_cv_auc": 0.8003565062388591,
+      "scan_cv_best_f1": 0.8236953455571226,
+      "scan_cv_best_threshold": 0.401379,
+      "family_cv_auc": 0.6989959931136402,
+      "family_cv_best_f1": 0.7930174563591023,
+      "family_cv_best_threshold": 0.211726
+    },
+    "random_forest": {
+      "model_name": "random_forest",
+      "features": [
+        "fragments_css",
+        "fragments_rawcos",
+        "fragments_fit_score",
+        "fragments_correlation",
+        "fragments_pc_missing_peaks",
+        "fragments_match_count",
+        "fragments_abs_anchor_ppm",
+        "diagnose_isodec_css",
+        "diagnose_raw_cosine",
+        "diagnose_matched_peaks",
+        "diagnose_area_covered",
+        "diagnose_top_peaks"
+      ],
+      "intercept": null,
+      "feature_importance_type": "feature_importance",
+      "feature_values": {
+        "fragments_css": 0.12214697326233048,
+        "fragments_rawcos": 0.06777876188780065,
+        "fragments_fit_score": 0.08345239057200966,
+        "fragments_correlation": 0.17280438884382554,
+        "fragments_pc_missing_peaks": 0.051521058643870576,
+        "fragments_match_count": 0.037560707759109316,
+        "fragments_abs_anchor_ppm": 0.14986407967813203,
+        "diagnose_isodec_css": 0.06129093012291216,
+        "diagnose_raw_cosine": 0.083732983498273,
+        "diagnose_matched_peaks": 0.025908654297781122,
+        "diagnose_area_covered": 0.1120177515169628,
+        "diagnose_top_peaks": 0.031921319916992444
+      },
+      "model_path": "reports/multiset_bc_truth_model/models/random_forest.joblib",
+      "scan_cv_auc": 0.8273382391029449,
+      "scan_cv_best_f1": 0.8442728442728442,
+      "scan_cv_best_threshold": 0.34986,
+      "family_cv_auc": 0.7082285905815318,
+      "family_cv_best_f1": 0.8111533586818758,
+      "family_cv_best_threshold": 0.346027
+    }
+  }
+}

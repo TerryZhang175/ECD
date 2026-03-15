@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import importlib.util
 import io
-import itertools
 import json
 import os
 import re
@@ -22,7 +21,14 @@ if str(ROOT) not in sys.path:
 
 import numpy as np
 import pandas as pd
-from scipy import optimize, special, stats
+from joblib import dump
+from scipy import stats
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 import personalized_config as cfg
 from ecd_api import FragmentsRunRequest, _build_overrides, _override_cfg, parse_custom_sequence
@@ -36,13 +42,14 @@ from personalized_modes import (
 
 REPORT_DIR = ROOT / "reports" / "multiset_bc_truth_model"
 DATASET_CSV = REPORT_DIR / "multiset_bc_truth_dataset.csv"
-MODELS_CSV = REPORT_DIR / "combo_models.csv"
+MODELS_CSV = REPORT_DIR / "model_comparison.csv"
 UNIVARIATE_CSV = REPORT_DIR / "univariate_stats.csv"
 SCAN_PRED_CSV = REPORT_DIR / "scan_cv_predictions.csv"
 FAMILY_PRED_CSV = REPORT_DIR / "family_cv_predictions.csv"
 COEFFICIENTS_CSV = REPORT_DIR / "model_coefficients.csv"
 MODEL_JSON = REPORT_DIR / "model_artifact.json"
 SUMMARY_MD = REPORT_DIR / "summary.md"
+MODEL_DIR = REPORT_DIR / "models"
 
 RE_PAT = re.compile(r"re\s*(\d+)", re.I)
 
@@ -682,71 +689,82 @@ def auc_from_scores(y: np.ndarray, x: np.ndarray) -> float | None:
     return float(auc)
 
 
-def fit_logistic_regression(X: np.ndarray, y: np.ndarray, reg: float = 1.0) -> tuple[np.ndarray, float]:
-    n_features = X.shape[1]
-
-    def objective(params: np.ndarray) -> tuple[float, np.ndarray]:
-        w = params[:n_features]
-        b = float(params[n_features])
-        z = np.clip(X @ w + b, -40.0, 40.0)
-        p = special.expit(z)
-        loss = np.mean(np.logaddexp(0.0, z) - y * z) + 0.5 * reg * np.sum(w * w) / max(len(y), 1)
-        diff = p - y
-        grad_w = (X.T @ diff) / max(len(y), 1) + reg * w / max(len(y), 1)
-        grad_b = float(np.mean(diff))
-        grad = np.concatenate([grad_w, np.array([grad_b])])
-        return float(loss), grad
-
-    init = np.zeros(n_features + 1, dtype=float)
-    result = optimize.minimize(
-        fun=lambda params: objective(params)[0],
-        x0=init,
-        jac=lambda params: objective(params)[1],
-        method="L-BFGS-B",
-        bounds=[(0.0, 5.0)] * n_features + [(-5.0, 5.0)],
-    )
-    params = result.x if result.success else init
-    return params[:n_features], float(params[n_features])
+def feature_frame(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
+    frame = df[features].apply(pd.to_numeric, errors="coerce")
+    frame = frame.replace([np.inf, -np.inf], np.nan)
+    return frame.clip(lower=-1e6, upper=1e6)
 
 
-def build_design_matrices(train_df: pd.DataFrame, test_df: pd.DataFrame, features: list[str]):
-    train = train_df[features].apply(pd.to_numeric, errors="coerce")
-    test = test_df[features].apply(pd.to_numeric, errors="coerce")
-    for feature in features:
-        if DIRECTION_MAP.get(feature) == "lower":
-            train[feature] = -train[feature]
-            test[feature] = -test[feature]
-    medians = train.median(axis=0, skipna=True).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    train = train.fillna(medians)
-    test = test.fillna(medians)
-    means = train.mean(axis=0)
-    stds = train.std(axis=0).replace(0.0, 1.0).fillna(1.0)
-    X_train = ((train - means) / stds).to_numpy(dtype=float)
-    X_test = ((test - means) / stds).to_numpy(dtype=float)
-    X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
-    X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
-    return X_train, X_test, medians.to_dict(), means.to_dict(), stds.to_dict()
+def build_model(model_name: str) -> Pipeline:
+    if model_name == "logistic_regression":
+        return Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "classifier",
+                    LogisticRegression(
+                        C=0.25,
+                        max_iter=5000,
+                        class_weight="balanced",
+                        solver="liblinear",
+                        random_state=42,
+                    ),
+                ),
+            ]
+        )
+    if model_name == "random_forest":
+        return Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "classifier",
+                    RandomForestClassifier(
+                        n_estimators=500,
+                        min_samples_leaf=2,
+                        class_weight="balanced_subsample",
+                        random_state=42,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+    raise ValueError(f"Unsupported model: {model_name}")
 
 
-def predict_group_cv(df: pd.DataFrame, features: list[str], group_col: str) -> pd.DataFrame:
+def safe_auc(y: np.ndarray, p: np.ndarray) -> float | None:
+    if y.size == 0 or len(np.unique(y)) < 2:
+        return None
+    try:
+        return float(roc_auc_score(y, p))
+    except Exception:
+        return None
+
+
+def predict_group_cv(df: pd.DataFrame, features: list[str], group_col: str, model_name: str) -> pd.DataFrame:
     rows = []
+    base_columns = ["dataset", "dataset_family", "scan_key", "re", "base_ion_spec", "truth", "candidate_group"]
     for group in sorted(df[group_col].dropna().unique()):
         train_df = df[df[group_col] != group]
         test_df = df[df[group_col] == group]
         if train_df.empty or test_df.empty:
             continue
-        y_train = train_df["truth"].to_numpy(dtype=float)
+        y_train = train_df["truth"].to_numpy(dtype=int)
         if len(np.unique(y_train)) < 2:
             continue
-        X_train, X_test, _, _, _ = build_design_matrices(train_df, test_df, features)
-        w, b = fit_logistic_regression(X_train, y_train, reg=1.0)
-        probs = special.expit(np.clip(X_test @ w + b, -40.0, 40.0))
-        fold = test_df[["dataset", "dataset_family", "scan_key", "re", "base_ion_spec", "truth", "candidate_group"]].copy()
+        X_train = feature_frame(train_df, features)
+        X_test = feature_frame(test_df, features)
+        model = build_model(model_name)
+        model.fit(X_train, y_train)
+        probs = model.predict_proba(X_test)[:, 1]
+        fold = test_df[base_columns].copy()
+        fold["model_name"] = model_name
         fold["cv_group"] = str(group)
         fold["probability"] = probs
         rows.append(fold)
+    columns = base_columns + ["model_name", "cv_group", "probability"]
     if not rows:
-        return pd.DataFrame(columns=["dataset", "dataset_family", "scan_key", "re", "base_ion_spec", "truth", "candidate_group", "cv_group", "probability"])
+        return pd.DataFrame(columns=columns)
     return pd.concat(rows, ignore_index=True)
 
 
@@ -821,68 +839,94 @@ def compute_univariate_stats(df: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values(["auc_best_direction", "spearman_rho"], ascending=[False, False]).reset_index(drop=True)
 
 
-def compute_combo_models(df: pd.DataFrame, max_size: int = 4) -> pd.DataFrame:
-    rows = []
-    for size in range(1, max_size + 1):
-        for combo in itertools.combinations(FEATURE_POOL, size):
-            scan_pred = predict_group_cv(df, list(combo), "scan_key")
-            if scan_pred.empty:
-                continue
-            scan_auc = auc_from_scores(scan_pred["truth"].to_numpy(dtype=float), scan_pred["probability"].to_numpy(dtype=float))
-            family_pred = predict_group_cv(df, list(combo), "dataset_family")
-            family_auc = auc_from_scores(family_pred["truth"].to_numpy(dtype=float), family_pred["probability"].to_numpy(dtype=float)) if not family_pred.empty else None
-            rows.append(
-                {
-                    "features": ", ".join(combo),
-                    "feature_count": size,
-                    "scan_cv_auc": float(scan_auc) if scan_auc is not None else np.nan,
-                    "family_cv_auc": float(family_auc) if family_auc is not None else np.nan,
-                }
-            )
-    out = pd.DataFrame(rows)
-    if out.empty:
-        return out
-    return out.sort_values(["scan_cv_auc", "family_cv_auc", "feature_count", "features"], ascending=[False, False, True, True]).reset_index(drop=True)
+def evaluate_prediction_frame(pred_df: pd.DataFrame) -> dict[str, Any]:
+    y = pred_df["truth"].to_numpy(dtype=float)
+    p = pred_df["probability"].to_numpy(dtype=float)
+    metrics_050 = metrics_at_threshold(y, p, 0.5)
+    metrics_best = best_threshold_from_predictions(pred_df)
+    return {
+        "auc": safe_auc(y, p),
+        "at_0_5": metrics_050,
+        "best_f1": metrics_best,
+    }
 
 
-def fit_full_model_artifact(df: pd.DataFrame, features: list[str]) -> tuple[dict[str, Any], pd.DataFrame]:
-    X_train, _, medians, means, stds = build_design_matrices(df, df, features)
-    y = df["truth"].to_numpy(dtype=float)
-    w, b = fit_logistic_regression(X_train, y, reg=1.0)
-    coef_rows = []
-    for feature, coef in zip(features, w):
-        coef_rows.append(
+def collect_model_results(df: pd.DataFrame, features: list[str], model_name: str) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
+    scan_pred = predict_group_cv(df, features, "scan_key", model_name)
+    family_pred = predict_group_cv(df, features, "dataset_family", model_name)
+    scan_eval = evaluate_prediction_frame(scan_pred)
+    family_eval = evaluate_prediction_frame(family_pred)
+    row = {
+        "model_name": model_name,
+        "feature_count": len(features),
+        "features": ", ".join(features),
+        "scan_cv_auc": float(scan_eval["auc"]) if scan_eval["auc"] is not None else np.nan,
+        "scan_cv_precision_at_0_5": scan_eval["at_0_5"]["precision"],
+        "scan_cv_recall_at_0_5": scan_eval["at_0_5"]["recall"],
+        "scan_cv_f1_at_0_5": scan_eval["at_0_5"]["f1"],
+        "scan_cv_best_threshold": scan_eval["best_f1"]["threshold"],
+        "scan_cv_precision_best_f1": scan_eval["best_f1"]["precision"],
+        "scan_cv_recall_best_f1": scan_eval["best_f1"]["recall"],
+        "scan_cv_f1_best": scan_eval["best_f1"]["f1"],
+        "family_cv_auc": float(family_eval["auc"]) if family_eval["auc"] is not None else np.nan,
+        "family_cv_precision_at_0_5": family_eval["at_0_5"]["precision"],
+        "family_cv_recall_at_0_5": family_eval["at_0_5"]["recall"],
+        "family_cv_f1_at_0_5": family_eval["at_0_5"]["f1"],
+        "family_cv_best_threshold": family_eval["best_f1"]["threshold"],
+        "family_cv_precision_best_f1": family_eval["best_f1"]["precision"],
+        "family_cv_recall_best_f1": family_eval["best_f1"]["recall"],
+        "family_cv_f1_best": family_eval["best_f1"]["f1"],
+    }
+    return row, scan_pred, family_pred
+
+
+def fit_full_model_artifact(df: pd.DataFrame, features: list[str], model_name: str) -> tuple[dict[str, Any], pd.DataFrame, Pipeline]:
+    X = feature_frame(df, features)
+    y = df["truth"].to_numpy(dtype=int)
+    model = build_model(model_name)
+    model.fit(X, y)
+
+    feature_rows: list[dict[str, Any]] = []
+    classifier = model.named_steps["classifier"]
+    if model_name == "logistic_regression":
+        importance_type = "coefficient"
+        values = classifier.coef_[0]
+        intercept = float(classifier.intercept_[0])
+    elif model_name == "random_forest":
+        importance_type = "feature_importance"
+        values = classifier.feature_importances_
+        intercept = None
+    else:
+        raise ValueError(model_name)
+
+    for feature, value in zip(features, values):
+        feature_rows.append(
             {
+                "model_name": model_name,
                 "feature": feature,
-                "direction": DIRECTION_MAP.get(feature),
-                "coefficient": float(coef),
-                "mean": float(means[feature]),
-                "std": float(stds[feature]),
-                "median_fill": float(medians[feature]),
+                "direction_hint": DIRECTION_MAP.get(feature),
+                "importance_type": importance_type,
+                "importance": float(value),
+                "abs_importance": abs(float(value)),
             }
         )
+
     artifact = {
-        "algorithm": "bounded_logistic_regression",
+        "model_name": model_name,
         "features": features,
-        "intercept": float(b),
-        "coefficients": {row["feature"]: row["coefficient"] for row in coef_rows},
-        "directions": {row["feature"]: row["direction"] for row in coef_rows},
-        "median_fill": {row["feature"]: row["median_fill"] for row in coef_rows},
-        "means": {row["feature"]: row["mean"] for row in coef_rows},
-        "stds": {row["feature"]: row["std"] for row in coef_rows},
+        "intercept": intercept,
+        "feature_importance_type": importance_type,
+        "feature_values": {row["feature"]: row["importance"] for row in feature_rows},
     }
-    return artifact, pd.DataFrame(coef_rows)
+    return artifact, pd.DataFrame(feature_rows), model
 
 
 def write_summary(
     df: pd.DataFrame,
     univariate: pd.DataFrame,
-    combo_models: pd.DataFrame,
-    best_features: list[str],
-    scan_metrics_050: dict[str, float],
-    scan_metrics_best: dict[str, float],
-    family_metrics_050: dict[str, float],
-    family_metrics_best: dict[str, float],
+    model_results: pd.DataFrame,
+    features: list[str],
+    best_model: str,
 ) -> None:
     total = len(df)
     positives = int(df["truth"].sum())
@@ -898,7 +942,7 @@ def write_summary(
     lines.append("- Truth: manual `Matched=1`")
     lines.append("- Precursor lock-mass / chain-to-fragments: `off` during feature extraction")
     lines.append("- Existing `truth_score`: `off` during feature extraction to avoid using the previous learned score as an input")
-    lines.append("- Model: bounded logistic regression (fallback because `scikit-learn` is not installed in this environment)")
+    lines.append("- Models compared: `LogisticRegression` and `RandomForestClassifier`")
     lines.append("")
     lines.append("## Dataset")
     lines.append("")
@@ -908,19 +952,27 @@ def write_summary(
     for family, count in Counter(df["dataset_family"]).items():
         lines.append(f"- Candidates in `{family}`: `{count}`")
     lines.append("")
-    lines.append("## Best Feature Set")
+    lines.append("## Model Features")
     lines.append("")
-    lines.append(f"- Selected by scan-holdout AUC: `{', '.join(best_features)}`")
+    lines.append(f"- Features: `{', '.join(features)}`")
     lines.append("")
-    lines.append("## Scan-Holdout CV")
+    lines.append("## Model Comparison")
     lines.append("")
-    lines.append(f"- Threshold `0.50`: precision `{scan_metrics_050['precision']:.3f}`, recall `{scan_metrics_050['recall']:.3f}`, F1 `{scan_metrics_050['f1']:.3f}`")
-    lines.append(f"- Best F1 threshold `{scan_metrics_best['threshold']:.6f}`: precision `{scan_metrics_best['precision']:.3f}`, recall `{scan_metrics_best['recall']:.3f}`, F1 `{scan_metrics_best['f1']:.3f}`")
+    for _, row in model_results.iterrows():
+        lines.append(
+            f"- `{row['model_name']}` scan-holdout: "
+            f"AUC `{row['scan_cv_auc']:.3f}`, F1@0.5 `{row['scan_cv_f1_at_0_5']:.3f}`, "
+            f"best-F1 `{row['scan_cv_f1_best']:.3f}` @ `{row['scan_cv_best_threshold']:.6f}`"
+        )
+        lines.append(
+            f"- `{row['model_name']}` family-holdout: "
+            f"AUC `{row['family_cv_auc']:.3f}`, F1@0.5 `{row['family_cv_f1_at_0_5']:.3f}`, "
+            f"best-F1 `{row['family_cv_f1_best']:.3f}` @ `{row['family_cv_best_threshold']:.6f}`"
+        )
     lines.append("")
-    lines.append("## Family-Holdout CV")
+    lines.append("## Best Model")
     lines.append("")
-    lines.append(f"- Threshold `0.50`: precision `{family_metrics_050['precision']:.3f}`, recall `{family_metrics_050['recall']:.3f}`, F1 `{family_metrics_050['f1']:.3f}`")
-    lines.append(f"- Best F1 threshold `{family_metrics_best['threshold']:.6f}`: precision `{family_metrics_best['precision']:.3f}`, recall `{family_metrics_best['recall']:.3f}`, F1 `{family_metrics_best['f1']:.3f}`")
+    lines.append(f"- Selected by family-holdout best-F1: `{best_model}`")
     lines.append("")
     lines.append("## Strongest Single Features")
     lines.append("")
@@ -930,56 +982,86 @@ def write_summary(
     lines.append("## Files")
     lines.append("")
     lines.append(f"- Dataset: `{DATASET_CSV.relative_to(ROOT)}`")
-    lines.append(f"- Combo models: `{MODELS_CSV.relative_to(ROOT)}`")
+    lines.append(f"- Model comparison: `{MODELS_CSV.relative_to(ROOT)}`")
     lines.append(f"- Univariate stats: `{UNIVARIATE_CSV.relative_to(ROOT)}`")
     lines.append(f"- Scan CV predictions: `{SCAN_PRED_CSV.relative_to(ROOT)}`")
     lines.append(f"- Family CV predictions: `{FAMILY_PRED_CSV.relative_to(ROOT)}`")
-    lines.append(f"- Coefficients: `{COEFFICIENTS_CSV.relative_to(ROOT)}`")
-    lines.append(f"- Model artifact: `{MODEL_JSON.relative_to(ROOT)}`")
+    lines.append(f"- Feature importance: `{COEFFICIENTS_CSV.relative_to(ROOT)}`")
+    lines.append(f"- Model artifact index: `{MODEL_JSON.relative_to(ROOT)}`")
     SUMMARY_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
     configs = dataset_configs()
     df = build_dataset(configs)
     univariate = compute_univariate_stats(df)
-    combo_models = compute_combo_models(df)
-    if combo_models.empty:
-        raise RuntimeError("No valid models could be fit")
+    features = list(FEATURE_POOL)
+    model_names = ["logistic_regression", "random_forest"]
 
-    best_features = [part.strip() for part in str(combo_models.iloc[0]["features"]).split(",")]
-    scan_pred = predict_group_cv(df, best_features, "scan_key")
-    family_pred = predict_group_cv(df, best_features, "dataset_family")
-    scan_metrics_050 = metrics_at_threshold(scan_pred["truth"].to_numpy(dtype=float), scan_pred["probability"].to_numpy(dtype=float), 0.5)
-    scan_metrics_best = best_threshold_from_predictions(scan_pred)
-    family_metrics_050 = metrics_at_threshold(family_pred["truth"].to_numpy(dtype=float), family_pred["probability"].to_numpy(dtype=float), 0.5)
-    family_metrics_best = best_threshold_from_predictions(family_pred)
-    artifact, coef_df = fit_full_model_artifact(df, best_features)
-    artifact["best_scan_cv_threshold"] = scan_metrics_best["threshold"]
-    artifact["best_family_cv_threshold"] = family_metrics_best["threshold"]
-    artifact["scan_cv_metrics_at_0_5"] = scan_metrics_050
-    artifact["scan_cv_metrics_best_f1"] = scan_metrics_best
-    artifact["family_cv_metrics_at_0_5"] = family_metrics_050
-    artifact["family_cv_metrics_best_f1"] = family_metrics_best
+    result_rows: list[dict[str, Any]] = []
+    scan_pred_frames: list[pd.DataFrame] = []
+    family_pred_frames: list[pd.DataFrame] = []
+    artifacts: dict[str, Any] = {}
+    importance_frames: list[pd.DataFrame] = []
+
+    for model_name in model_names:
+        result_row, scan_pred, family_pred = collect_model_results(df, features, model_name)
+        artifact, importance_df, fitted_model = fit_full_model_artifact(df, features, model_name)
+        result_rows.append(result_row)
+        scan_pred_frames.append(scan_pred)
+        family_pred_frames.append(family_pred)
+        importance_frames.append(importance_df)
+        model_path = MODEL_DIR / f"{model_name}.joblib"
+        dump(fitted_model, model_path)
+        artifact["model_path"] = str(model_path.relative_to(ROOT))
+        artifact["scan_cv_auc"] = result_row["scan_cv_auc"]
+        artifact["scan_cv_best_f1"] = result_row["scan_cv_f1_best"]
+        artifact["scan_cv_best_threshold"] = result_row["scan_cv_best_threshold"]
+        artifact["family_cv_auc"] = result_row["family_cv_auc"]
+        artifact["family_cv_best_f1"] = result_row["family_cv_f1_best"]
+        artifact["family_cv_best_threshold"] = result_row["family_cv_best_threshold"]
+        artifacts[model_name] = artifact
+
+    model_results = pd.DataFrame(result_rows).sort_values(
+        ["family_cv_f1_best", "family_cv_auc", "scan_cv_f1_best", "model_name"],
+        ascending=[False, False, False, True],
+    ).reset_index(drop=True)
+    best_model = str(model_results.iloc[0]["model_name"])
+    scan_pred = pd.concat(scan_pred_frames, ignore_index=True)
+    family_pred = pd.concat(family_pred_frames, ignore_index=True)
+    coef_df = pd.concat(importance_frames, ignore_index=True).sort_values(
+        ["model_name", "abs_importance", "feature"],
+        ascending=[True, False, True],
+    ).reset_index(drop=True)
+
+    summary_payload = {
+        "features": features,
+        "best_model": best_model,
+        "models": artifacts,
+    }
 
     df.to_csv(DATASET_CSV, index=False)
-    combo_models.to_csv(MODELS_CSV, index=False)
+    model_results.to_csv(MODELS_CSV, index=False)
     univariate.to_csv(UNIVARIATE_CSV, index=False)
     scan_pred.to_csv(SCAN_PRED_CSV, index=False)
     family_pred.to_csv(FAMILY_PRED_CSV, index=False)
     coef_df.to_csv(COEFFICIENTS_CSV, index=False)
-    MODEL_JSON.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    write_summary(df, univariate, combo_models, best_features, scan_metrics_050, scan_metrics_best, family_metrics_050, family_metrics_best)
+    MODEL_JSON.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+    write_summary(df, univariate, model_results, features, best_model)
 
     print(f"Dataset rows: {len(df)}")
     print(f"Positives: {int(df['truth'].sum())}")
     print(f"Negatives: {len(df) - int(df['truth'].sum())}")
-    print(f"Best features: {', '.join(best_features)}")
-    print(f"Scan CV F1@0.5: {scan_metrics_050['f1']:.3f}")
-    print(f"Scan CV best-F1: {scan_metrics_best['f1']:.3f} @ {scan_metrics_best['threshold']:.6f}")
-    print(f"Family CV F1@0.5: {family_metrics_050['f1']:.3f}")
-    print(f"Family CV best-F1: {family_metrics_best['f1']:.3f} @ {family_metrics_best['threshold']:.6f}")
+    print(f"Features: {', '.join(features)}")
+    for _, row in model_results.iterrows():
+        print(
+            f"{row['model_name']}: "
+            f"scan best-F1 {row['scan_cv_f1_best']:.3f} @ {row['scan_cv_best_threshold']:.6f}; "
+            f"family best-F1 {row['family_cv_f1_best']:.3f} @ {row['family_cv_best_threshold']:.6f}"
+        )
+    print(f"Best model: {best_model}")
 
 
 if __name__ == "__main__":
