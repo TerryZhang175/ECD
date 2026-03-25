@@ -77,6 +77,8 @@ ANCHOR_TOP_N = 3
 ANCHOR_MIN_MATCHES = 1
 MIN_COSINE = 0.70  # minimum cosine similarity threshold for match acceptance
 FRAG_ANCHOR_CENTROID_WINDOW_DA = 0.2
+FRAG_ANCHOR_USE_HYPOTHESIS_SCORING = False
+FRAG_ANCHOR_LOCAL_TOP_K = 3
 
 # Hydrogen-transfer handling (ExD/ECD-style). Uses H+ mass (not H atom mass).
 # Only enabled for c/z by default; accept transfer only if cosine similarity

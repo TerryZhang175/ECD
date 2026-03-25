@@ -155,6 +155,110 @@ def _build_noise_level_model(
     return {"coeffs": coeffs, "fallback": fallback}
 
 
+def _choose_fragment_anchor_hypothesis(
+    spectrum_mz: np.ndarray,
+    spectrum_int: np.ndarray,
+    *,
+    sample_mzs: np.ndarray,
+    best_pred: np.ndarray,
+    dist_model: np.ndarray,
+    z: int,
+    obs_max: float,
+    match_tol_ppm: float,
+    use_centroid_logic: bool,
+) -> tuple[dict[str, float | int] | None, int]:
+    anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
+    top_n = max(1, int(getattr(cfg, "ANCHOR_TOP_N", 3)))
+    local_top_k = max(1, int(getattr(cfg, "FRAG_ANCHOR_LOCAL_TOP_K", 3)))
+    min_obs_rel_int = float(getattr(cfg, "MIN_OBS_REL_INT", 0.0))
+    sorted_idx = np.argsort(best_pred)[::-1][:top_n]
+    hypotheses: list[dict[str, float | int]] = []
+    seen_obs_idx: set[int] = set()
+
+    for idx in sorted_idx:
+        mz_candidate = float(sample_mzs[int(idx)])
+        local_centroids = get_local_centroids_window(
+            spectrum_mz,
+            spectrum_int,
+            center_mz=mz_candidate,
+            lb=-anchor_window,
+            ub=anchor_window,
+            force_hill=bool(use_centroid_logic),
+        )
+
+        candidate_rows: list[tuple[float, float, int]] = []
+        if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+            intensity_order = np.argsort(local_centroids[:, 1])[::-1][:local_top_k]
+            ppm_errors = np.abs((local_centroids[:, 0] - mz_candidate) / max(abs(mz_candidate), 1e-12) * 1e6)
+            ppm_order = np.argsort(ppm_errors)[:local_top_k]
+            picked: list[int] = []
+            for local_idx in np.concatenate([intensity_order, ppm_order]):
+                local_idx = int(local_idx)
+                if local_idx not in picked:
+                    picked.append(local_idx)
+            for local_idx in picked:
+                candidate_rows.append(
+                    (
+                        float(local_centroids[local_idx, 0]),
+                        float(local_centroids[local_idx, 1]),
+                        nearest_peak_index(spectrum_mz, float(local_centroids[local_idx, 0])),
+                    )
+                )
+        else:
+            obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+            candidate_rows.append((float(spectrum_mz[obs_idx_c]), float(spectrum_int[obs_idx_c]), int(obs_idx_c)))
+
+        local_max_int = float(np.max(local_centroids[:, 1])) if isinstance(local_centroids, np.ndarray) and local_centroids.size else 0.0
+        for obs_mz_c, obs_int_c, obs_idx_c in candidate_rows:
+            if obs_idx_c in seen_obs_idx:
+                continue
+            if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
+                continue
+            if min_obs_rel_int > 0 and obs_int_c < obs_max * min_obs_rel_int:
+                continue
+
+            dist_shifted = dist_model.copy()
+            dist_shifted[:, 0] += float(obs_mz_c - mz_candidate)
+            y_obs = observed_intensities_isodec(
+                spectrum_mz,
+                spectrum_int,
+                dist_shifted[:, 0],
+                z=int(z),
+                match_tol_ppm=float(match_tol_ppm),
+                peak_mz=float(obs_mz_c),
+            )
+            quick_css = float(css_similarity(y_obs, dist_shifted[:, 1]))
+            ppm_abs = abs((obs_mz_c - mz_candidate) / max(abs(mz_candidate), 1e-12) * 1e6)
+            ppm_score = float(np.clip(1.0 - (ppm_abs / max(float(match_tol_ppm), 1e-9)), 0.0, 1.0))
+            local_int_score = float(np.clip(obs_int_c / max(local_max_int, obs_int_c, 1e-12), 0.0, 1.0))
+            score = 0.60 * quick_css + 0.25 * local_int_score + 0.15 * ppm_score
+            hypotheses.append(
+                {
+                    "score": float(score),
+                    "quick_css": float(quick_css),
+                    "obs_mz": float(obs_mz_c),
+                    "obs_int": float(obs_int_c),
+                    "obs_idx": int(obs_idx_c),
+                    "theory_mz": float(mz_candidate),
+                    "ppm_abs": float(ppm_abs),
+                }
+            )
+            seen_obs_idx.add(int(obs_idx_c))
+
+    if not hypotheses:
+        return None, 0
+    best = max(
+        hypotheses,
+        key=lambda item: (
+            float(item["score"]),
+            float(item["quick_css"]),
+            -float(item["ppm_abs"]),
+            float(item["obs_int"]),
+        ),
+    )
+    return best, len(hypotheses)
+
+
 def _evaluate_noise_level(model: dict | None, mz: float) -> float:
     fallback = 0.0
     if isinstance(model, dict):
@@ -2119,37 +2223,55 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                 obs_mz = None
                 obs_int = None
                 anchor_hits = 0
-                anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
-                sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
-                for idx in sorted_idx:
-                    mz_candidate = float(sample_mzs[int(idx)])
-                    local_centroids = get_local_centroids_window(
+                if bool(getattr(cfg, "FRAG_ANCHOR_USE_HYPOTHESIS_SCORING", False)):
+                    anchor_choice, anchor_hits = _choose_fragment_anchor_hypothesis(
                         spectrum_mz,
                         spectrum_int,
-                        center_mz=mz_candidate,
-                        lb=-anchor_window,
-                        ub=anchor_window,
-                        force_hill=bool(use_centroid_logic),
+                        sample_mzs=sample_mzs,
+                        best_pred=best_pred,
+                        dist_model=dist_model,
+                        z=int(z),
+                        obs_max=float(obs_max),
+                        match_tol_ppm=float(match_tol_ppm),
+                        use_centroid_logic=bool(use_centroid_logic),
                     )
-                    if isinstance(local_centroids, np.ndarray) and local_centroids.size:
-                        best_local_idx = int(np.argmax(local_centroids[:, 1]))
-                        obs_mz_c = float(local_centroids[best_local_idx, 0])
-                        obs_int_c = float(local_centroids[best_local_idx, 1])
-                        obs_idx_c = nearest_peak_index(spectrum_mz, obs_mz_c)
-                    else:
-                        obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
-                        obs_mz_c = float(spectrum_mz[obs_idx_c])
-                        obs_int_c = float(spectrum_int[obs_idx_c])
-                    if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
-                        continue
-                    if float(cfg.MIN_OBS_REL_INT) > 0 and obs_int_c < obs_max * float(cfg.MIN_OBS_REL_INT):
-                        continue
-                    anchor_hits += 1
-                    if anchor_theory_mz is None:
-                        anchor_theory_mz = mz_candidate
-                        obs_idx = int(obs_idx_c)
-                        obs_mz = obs_mz_c
-                        obs_int = obs_int_c
+                    if anchor_choice is not None:
+                        anchor_theory_mz = float(anchor_choice["theory_mz"])
+                        obs_idx = int(anchor_choice["obs_idx"])
+                        obs_mz = float(anchor_choice["obs_mz"])
+                        obs_int = float(anchor_choice["obs_int"])
+                else:
+                    anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
+                    sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
+                    for idx in sorted_idx:
+                        mz_candidate = float(sample_mzs[int(idx)])
+                        local_centroids = get_local_centroids_window(
+                            spectrum_mz,
+                            spectrum_int,
+                            center_mz=mz_candidate,
+                            lb=-anchor_window,
+                            ub=anchor_window,
+                            force_hill=bool(use_centroid_logic),
+                        )
+                        if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+                            best_local_idx = int(np.argmax(local_centroids[:, 1]))
+                            obs_mz_c = float(local_centroids[best_local_idx, 0])
+                            obs_int_c = float(local_centroids[best_local_idx, 1])
+                            obs_idx_c = nearest_peak_index(spectrum_mz, obs_mz_c)
+                        else:
+                            obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+                            obs_mz_c = float(spectrum_mz[obs_idx_c])
+                            obs_int_c = float(spectrum_int[obs_idx_c])
+                        if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
+                            continue
+                        if float(cfg.MIN_OBS_REL_INT) > 0 and obs_int_c < obs_max * float(cfg.MIN_OBS_REL_INT):
+                            continue
+                        anchor_hits += 1
+                        if anchor_theory_mz is None:
+                            anchor_theory_mz = mz_candidate
+                            obs_idx = int(obs_idx_c)
+                            obs_mz = obs_mz_c
+                            obs_int = obs_int_c
                 if anchor_hits < int(cfg.ANCHOR_MIN_MATCHES) or anchor_theory_mz is None:
                     return None
                 ppm = (obs_mz - anchor_theory_mz) / anchor_theory_mz * 1e6
