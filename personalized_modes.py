@@ -259,6 +259,38 @@ def _choose_fragment_anchor_hypothesis(
     return best, len(hypotheses)
 
 
+def _iter_fragment_anchor_candidates_by_intensity(
+    spectrum_mz: np.ndarray,
+    spectrum_int: np.ndarray,
+    *,
+    mz_candidate: float,
+    use_centroid_logic: bool,
+) -> list[tuple[float, float, int]]:
+    anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
+    local_top_k = max(1, int(getattr(cfg, "FRAG_ANCHOR_LOCAL_TOP_K", 3)))
+    local_centroids = get_local_centroids_window(
+        spectrum_mz,
+        spectrum_int,
+        center_mz=mz_candidate,
+        lb=-anchor_window,
+        ub=anchor_window,
+        force_hill=bool(use_centroid_logic),
+    )
+    candidates: list[tuple[float, float, int]] = []
+    if isinstance(local_centroids, np.ndarray) and local_centroids.size:
+        intensity_order = np.argsort(local_centroids[:, 1])[::-1]
+        for local_idx in intensity_order[:local_top_k]:
+            local_idx = int(local_idx)
+            obs_mz_c = float(local_centroids[local_idx, 0])
+            obs_int_c = float(local_centroids[local_idx, 1])
+            obs_idx_c = nearest_peak_index(spectrum_mz, obs_mz_c)
+            candidates.append((obs_mz_c, obs_int_c, int(obs_idx_c)))
+    else:
+        obs_idx_c = nearest_peak_index(spectrum_mz, mz_candidate)
+        candidates.append((float(spectrum_mz[obs_idx_c]), float(spectrum_int[obs_idx_c]), int(obs_idx_c)))
+    return candidates
+
+
 def _evaluate_noise_level(model: dict | None, mz: float) -> float:
     fallback = 0.0
     if isinstance(model, dict):
@@ -2240,6 +2272,28 @@ def run_fragments_mode(residues, spectrum, isodec_config, emit_outputs: bool = T
                         obs_idx = int(anchor_choice["obs_idx"])
                         obs_mz = float(anchor_choice["obs_mz"])
                         obs_int = float(anchor_choice["obs_int"])
+                elif bool(getattr(cfg, "FRAG_ANCHOR_USE_INTENSITY_FALLBACK", False)):
+                    sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]
+                    for idx in sorted_idx:
+                        mz_candidate = float(sample_mzs[int(idx)])
+                        candidate_rows = _iter_fragment_anchor_candidates_by_intensity(
+                            spectrum_mz,
+                            spectrum_int,
+                            mz_candidate=mz_candidate,
+                            use_centroid_logic=bool(use_centroid_logic),
+                        )
+                        for obs_mz_c, obs_int_c, obs_idx_c in candidate_rows:
+                            if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
+                                continue
+                            if float(cfg.MIN_OBS_REL_INT) > 0 and obs_int_c < obs_max * float(cfg.MIN_OBS_REL_INT):
+                                continue
+                            anchor_hits += 1
+                            if anchor_theory_mz is None:
+                                anchor_theory_mz = mz_candidate
+                                obs_idx = int(obs_idx_c)
+                                obs_mz = obs_mz_c
+                                obs_int = obs_int_c
+                            break
                 else:
                     anchor_window = float(getattr(cfg, "FRAG_ANCHOR_CENTROID_WINDOW_DA", 0.2))
                     sorted_idx = np.argsort(best_pred)[::-1][: int(cfg.ANCHOR_TOP_N)]

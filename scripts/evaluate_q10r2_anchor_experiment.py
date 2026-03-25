@@ -95,6 +95,16 @@ def anchor_experiment_enabled(enabled: bool):
         cfg.FRAG_ANCHOR_USE_HYPOTHESIS_SCORING = old
 
 
+@contextmanager
+def anchor_intensity_fallback_enabled(enabled: bool):
+    old = cfg.FRAG_ANCHOR_USE_INTENSITY_FALLBACK
+    cfg.FRAG_ANCHOR_USE_INTENSITY_FALLBACK = bool(enabled)
+    try:
+        yield
+    finally:
+        cfg.FRAG_ANCHOR_USE_INTENSITY_FALLBACK = old
+
+
 def run_scan(re_num: int) -> dict[str, Any]:
     spec_path = SAMPLE_DIR / f"ECDRE{re_num}.txt"
     req = FragmentsRunRequest(
@@ -156,12 +166,19 @@ def result_maps(result: dict[str, Any]) -> tuple[set[tuple[str, int, int]], set[
     return set(raw_best), set(final_best)
 
 
-def run_case(label: str, *, use_anchor_hypothesis: bool, truth_by_re: dict[int, set[tuple[str, int, int]]], re_nums: list[int]) -> dict[str, Any]:
+def run_case(
+    label: str,
+    *,
+    use_anchor_hypothesis: bool,
+    use_anchor_intensity_fallback: bool,
+    truth_by_re: dict[int, set[tuple[str, int, int]]],
+    re_nums: list[int],
+) -> dict[str, Any]:
     per_re: list[dict[str, Any]] = []
     total_raw = {"tp": 0, "fp": 0, "fn": 0}
     total_final = {"tp": 0, "fp": 0, "fn": 0}
 
-    with anchor_experiment_enabled(use_anchor_hypothesis):
+    with anchor_experiment_enabled(use_anchor_hypothesis), anchor_intensity_fallback_enabled(use_anchor_intensity_fallback):
         for re_num in re_nums:
             result = run_scan(re_num)
             raw_keys, final_keys = result_maps(result)
@@ -204,6 +221,7 @@ def run_case(label: str, *, use_anchor_hypothesis: bool, truth_by_re: dict[int, 
     return {
         "label": label,
         "use_anchor_hypothesis": bool(use_anchor_hypothesis),
+        "use_anchor_intensity_fallback": bool(use_anchor_intensity_fallback),
         "raw": finalize(total_raw),
         "final": finalize(total_final),
         "per_re": per_re,
@@ -214,8 +232,20 @@ def main() -> None:
     truth_by_re, re_nums = load_manual_truth()
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     cases = [
-        run_case("baseline", use_anchor_hypothesis=False, truth_by_re=truth_by_re, re_nums=re_nums),
-        run_case("anchor_hypothesis", use_anchor_hypothesis=True, truth_by_re=truth_by_re, re_nums=re_nums),
+        run_case(
+            "baseline",
+            use_anchor_hypothesis=False,
+            use_anchor_intensity_fallback=False,
+            truth_by_re=truth_by_re,
+            re_nums=re_nums,
+        ),
+        run_case(
+            "intensity_fallback",
+            use_anchor_hypothesis=False,
+            use_anchor_intensity_fallback=True,
+            truth_by_re=truth_by_re,
+            re_nums=re_nums,
+        ),
     ]
     SUMMARY_JSON.write_text(json.dumps(cases, indent=2), encoding="utf-8")
 
