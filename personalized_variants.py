@@ -8,7 +8,7 @@ def variant_type_from_suffix(suffix: str) -> str:
     s = str(suffix or "")
     if not s:
         return "nonmodified"
-    if "OxidizedLoop" in s:
+    if "OxidizedLoop" in s or "BrokenLoop" in s:
         return "ss-specific"
     return "cys-specific"
 

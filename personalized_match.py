@@ -71,15 +71,35 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
             w.writerow({k: r.get(k, "") for k in fieldnames})
 
 
-def composition_to_formula(comp) -> str:
+def composition_to_formula(comp, proton_count: int = 0) -> str:
     """Format a pyteomics Composition as an ordered chemical formula string."""
     if comp is None:
         return ""
-    order = ["C", "H", "N", "O", "S", "P", "Cl", "Br", "Na", "K", "Fe", "Ca", "Mg", "Zn", "Ni"]
+    order = [
+        "C",
+        "H",
+        "N",
+        "O",
+        "S",
+        "P",
+        "Cl",
+        "Br",
+        "Na",
+        "K",
+        "Fe",
+        "Ca",
+        "Mg",
+        "Zn",
+        "Ni",
+    ]
     try:
         items = {str(k): int(v) for k, v in comp.items() if int(v) != 0}
     except Exception:
         return str(comp)
+    if proton_count:
+        items["H"] = items.get("H", 0) + int(proton_count)
+        if items["H"] == 0:
+            items.pop("H", None)
 
     parts: list[str] = []
     used: set[str] = set()
@@ -125,29 +145,36 @@ def compute_fragment_intensity_cap(
 
     # Get monomer neutral composition (for complex mode)
     from personalized_sequence import get_neutral_monomer_composition
+
     monomer_comp = get_neutral_monomer_composition(residues)
 
     for ion_type in cfg.ION_TYPES:
         series = ion_series(ion_type)
-        allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_1H))
-        allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_2H))
+        allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (
+            series in set(cfg.H_TRANSFER_ION_TYPES_1H)
+        )
+        allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (
+            series in set(cfg.H_TRANSFER_ION_TYPES_2H)
+        )
 
         for frag_len in range(1, n):
             try:
-                _, frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+                _, frag_comp = ion_composition_from_sequence(
+                    residues, ion_type, frag_len, amidated=cfg.AMIDATED
+                )
             except Exception:
                 continue
 
             # Get disulfide variants
             cys_variants = get_disulfide_logic(ion_type, frag_len, len(residues))
-            
+
             # If no disulfide variants, use the original composition
             if not cys_variants:
                 cys_variants = [("", None)]
 
             for variant_suffix, shift_comp in cys_variants:
                 # Apply disulfide shift if present
-                if shift_comp:
+                if shift_comp is not None:
                     try:
                         variant_comp = frag_comp + shift_comp
                     except Exception:
@@ -159,7 +186,9 @@ def compute_fragment_intensity_cap(
                     # For complex_fragments mode, only consider complex fragments (monomer + fragment) without neutral losses
                     target_comp = variant_comp + monomer_comp
                     # Process this target_comp once
-                    for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
+                    for z in range(
+                        int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1
+                    ):
                         try:
                             dist0 = theoretical_isodist_from_comp(target_comp, z)
                         except Exception:
@@ -169,8 +198,16 @@ def compute_fragment_intensity_cap(
 
                         anchor = float(dist0[get_anchor_idx(dist0), 0])
                         if allow_1h or allow_2h:
-                            shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
-                            shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
+                            shift_1 = (
+                                float(cfg.H_TRANSFER_MASS) / float(z)
+                                if (allow_1h or allow_2h)
+                                else 0.0
+                            )
+                            shift_2 = (
+                                2.0 * float(cfg.H_TRANSFER_MASS) / float(z)
+                                if allow_2h
+                                else 0.0
+                            )
                             shifts = [0.0]
                             if allow_1h:
                                 shifts.extend([shift_1, -shift_1])
@@ -185,16 +222,22 @@ def compute_fragment_intensity_cap(
                                 continue
                             if mz_max_f is not None and mz0 > mz_max_f:
                                 continue
-                            m = max_intensity_in_ppm_window(spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm))
+                            m = max_intensity_in_ppm_window(
+                                spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm)
+                            )
                             if m > 0.0:
                                 hits += 1
                                 if m > cap:
                                     cap = m
                 else:
                     # For regular fragments mode, consider neutral losses
-                    for _, loss_comp in neutral_loss_variants(variant_comp, ion_series_letter=series):
+                    for _, loss_comp in neutral_loss_variants(
+                        variant_comp, ion_series_letter=series
+                    ):
                         target_comp = loss_comp
-                        for z in range(int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1):
+                        for z in range(
+                            int(cfg.FRAG_MIN_CHARGE), int(cfg.FRAG_MAX_CHARGE) + 1
+                        ):
                             try:
                                 dist0 = theoretical_isodist_from_comp(target_comp, z)
                             except Exception:
@@ -204,8 +247,16 @@ def compute_fragment_intensity_cap(
 
                             anchor = float(dist0[get_anchor_idx(dist0), 0])
                             if allow_1h or allow_2h:
-                                shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
-                                shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
+                                shift_1 = (
+                                    float(cfg.H_TRANSFER_MASS) / float(z)
+                                    if (allow_1h or allow_2h)
+                                    else 0.0
+                                )
+                                shift_2 = (
+                                    2.0 * float(cfg.H_TRANSFER_MASS) / float(z)
+                                    if allow_2h
+                                    else 0.0
+                                )
                                 shifts = [0.0]
                                 if allow_1h:
                                     shifts.extend([shift_1, -shift_1])
@@ -220,7 +271,12 @@ def compute_fragment_intensity_cap(
                                     continue
                                 if mz_max_f is not None and mz0 > mz_max_f:
                                     continue
-                                m = max_intensity_in_ppm_window(spectrum_mz, spectrum_int, mz0, tol_ppm=float(tol_ppm))
+                                m = max_intensity_in_ppm_window(
+                                    spectrum_mz,
+                                    spectrum_int,
+                                    mz0,
+                                    tol_ppm=float(tol_ppm),
+                                )
                                 if m > 0.0:
                                     hits += 1
                                     if m > cap:
@@ -251,7 +307,7 @@ def match_theory_peaks(
 ) -> list[dict]:
     out: list[dict] = []
     theory_mz = np.asarray(theory_mz, dtype=float)
-    
+
     # 预先找到理论最强峰的索引 (Anchor Peak)
     max_theory_idx = -1
     if theory_int is not None:
@@ -261,22 +317,22 @@ def match_theory_peaks(
 
     for i, mz in enumerate(theory_mz):
         mz_val = float(mz)
-        
+
         # 1. 确定 PPM 窗口的 m/z 范围
         if mz_val == 0:
             delta = 0.0
         else:
             delta = mz_val * float(tol_ppm) * 1e-6
-            
+
         low = mz_val - delta
         high = mz_val + delta
-        
+
         # 2. 在窗口内寻找所有候选峰 (使用 searchsorted 加速范围搜索)
         start_idx = np.searchsorted(spectrum_mz, low, side="left")
         end_idx = np.searchsorted(spectrum_mz, high, side="right")
-        
+
         best_idx = -1
-        
+
         # 如果窗口内没有峰，回退到寻找最近的峰 (即使在 PPM 外)
         # 这样保持了 logic：如果匹配失败，也会返回一个 'within': False 的结果
         if end_idx <= start_idx:
@@ -285,10 +341,10 @@ def match_theory_peaks(
             # 窗口内有候选峰，开始应用你的新策略
             candidate_indices = np.arange(start_idx, end_idx)
             candidate_ints = spectrum_int[start_idx:end_idx]
-            
+
             # 判断当前是否是理论最强峰
             is_anchor = (i == max_theory_idx) and (max_theory_idx != -1)
-            
+
             if is_anchor:
                 # 策略 A: 对于理论最强峰，我们假设它是基准，取窗口内强度最大的峰
                 # 这避免了因为基准对齐问题导致我们错过真正的 anchor
@@ -313,10 +369,12 @@ def match_theory_peaks(
         mz_obs = float(spectrum_mz[idx])
         ppm = (mz_obs - mz_val) / mz_val * 1e6 if mz_val != 0 else float("inf")
         within = within_ppm(mz_obs, mz_val, tol_ppm)
-        
+
         row = {
             "theory_mz": mz_val,
-            "theory_int": float(theory_int[i]) if theory_int is not None and i < len(theory_int) else "",
+            "theory_int": float(theory_int[i])
+            if theory_int is not None and i < len(theory_int)
+            else "",
             "obs_mz": mz_obs,
             "ppm": float(ppm),
             "obs_int": float(spectrum_int[idx]),
@@ -324,7 +382,7 @@ def match_theory_peaks(
             "obs_idx": idx,
         }
         out.append(row)
-        
+
     return out
 
 
@@ -338,7 +396,9 @@ def get_local_centroids_window(
 ) -> np.ndarray:
     from personalized_centroid import hill_centroid_window
 
-    return hill_centroid_window(spectrum_mz, spectrum_int, center_mz, lb, ub, force_hill=force_hill)
+    return hill_centroid_window(
+        spectrum_mz, spectrum_int, center_mz, lb, ub, force_hill=force_hill
+    )
 
 
 def execute_hybrid_strategy(scoring_func, *args, **kwargs):
@@ -355,7 +415,13 @@ def execute_hybrid_strategy(scoring_func, *args, **kwargs):
     def _get_score(d: dict) -> float:
         if not isinstance(d, dict):
             return float("-inf")
-        for key in ("score", "css", "isodec_css", "final_cosine", "raw_cosine_preanchor"):
+        for key in (
+            "score",
+            "css",
+            "isodec_css",
+            "final_cosine",
+            "raw_cosine_preanchor",
+        ):
             v = d.get(key, None)
             try:
                 if v is None:
@@ -489,6 +555,172 @@ def isodec_css_and_accept(
     return peakmz_new is not None, css, peakmz_new
 
 
+def _scale_theoretical_to_observed(
+    theory_int: np.ndarray, obs_int: np.ndarray
+) -> tuple[np.ndarray, float]:
+    theory = np.asarray(theory_int, dtype=float)
+    obs = np.asarray(obs_int, dtype=float)
+    denom = float(np.dot(theory, theory))
+    if not np.isfinite(denom) or denom <= 0.0:
+        return theory.copy(), 1.0
+    scale = float(np.dot(theory, obs) / denom)
+    if not np.isfinite(scale) or scale < 0.0:
+        scale = 0.0
+    return theory * scale, scale
+
+
+def _fit_score_from_envelope(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+    total_theory = float(np.sum(theory))
+    if theory.size == 0 or total_theory <= 0.0:
+        return 0.0
+    numerator = 0.0
+    for idx, theo_value in enumerate(theory):
+        theo = float(theo_value)
+        if theo <= 0.0:
+            continue
+        exp = float(obs[idx]) if idx < obs.size else 0.0
+        if exp <= 0.0:
+            ratio = 0.0
+        else:
+            ratio = min(theo / exp, exp / theo)
+        numerator += ratio * theo
+    return float(np.clip(numerator / total_theory, 0.0, 1.0))
+
+
+def _safe_pearson(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+    if obs.size < 2 or theory.size < 2:
+        return 0.0
+    if float(np.std(obs)) <= 0.0 or float(np.std(theory)) <= 0.0:
+        return 0.0
+    corr = np.corrcoef(obs, theory)[0, 1]
+    if not np.isfinite(corr):
+        return 0.0
+    return float(np.clip(corr, -1.0, 1.0))
+
+
+def _calculate_fragments_gate(
+    *,
+    isodec_css: float,
+    ppm: float,
+    theory_matches: list[dict],
+    dist_plot: np.ndarray,
+    spectrum_mz: np.ndarray,
+    spectrum_int: np.ndarray,
+    local_centroids: np.ndarray | None,
+    anchor_mz: float,
+) -> dict:
+    min_isodec_css = float(getattr(cfg, "FRAG_MIN_ISODEC_CSS", cfg.MIN_COSINE))
+    max_anchor_abs_ppm_cfg = getattr(cfg, "FRAG_MAX_ANCHOR_ABS_PPM", None)
+    max_anchor_abs_ppm = (
+        float(max_anchor_abs_ppm_cfg)
+        if max_anchor_abs_ppm_cfg is not None
+        else float(cfg.MATCH_TOL_PPM) * 1.5
+    )
+    min_matched_peaks = max(1, int(getattr(cfg, "FRAG_MIN_MATCHED_PEAKS", 2)))
+    max_pc_missing_peaks = float(getattr(cfg, "FRAG_MAX_PC_MISSING_PEAKS", 85.0))
+    min_fit_score = float(getattr(cfg, "FRAG_MIN_FIT_SCORE", 0.35))
+    min_correlation_cfg = getattr(cfg, "FRAG_MIN_CORRELATION", None)
+    min_correlation = (
+        float(min_correlation_cfg) if min_correlation_cfg is not None else None
+    )
+
+    matched_peaks = [m for m in theory_matches if m.get("within")]
+    local_matches_count = len(matched_peaks)
+
+    total_theory_peaks = len(theory_matches)
+    num_missing = total_theory_peaks - local_matches_count
+    pc_missing_peaks = (
+        (num_missing / total_theory_peaks * 100.0) if total_theory_peaks > 0 else 100.0
+    )
+
+    if total_theory_peaks > 0 and dist_plot.size:
+        theory_int = np.asarray(dist_plot[:, 1], dtype=float)
+        obs_aligned = np.zeros(total_theory_peaks, dtype=float)
+        for i, m in enumerate(theory_matches):
+            if i < len(theory_int):
+                obs_idx = m.get("obs_idx")
+                if obs_idx is not None and 0 <= obs_idx < len(spectrum_int):
+                    obs_aligned[i] = float(spectrum_int[obs_idx])
+
+        scaled_theory, _ = _scale_theoretical_to_observed(theory_int, obs_aligned)
+        fit_score = _fit_score_from_envelope(obs_aligned, scaled_theory)
+        correlation_coefficient = _safe_pearson(obs_aligned, scaled_theory)
+    else:
+        fit_score = 0.0
+        correlation_coefficient = 0.0
+
+    checks = {
+        "isodec_css": {
+            "value": float(isodec_css),
+            "threshold": f">= {min_isodec_css:.6f}",
+            "threshold_value": min_isodec_css,
+            "pass": float(isodec_css) >= min_isodec_css,
+            "description": "Cosine similarity score",
+        },
+        "ppm": {
+            "value": float(abs(ppm)),
+            "threshold": f"<= {max_anchor_abs_ppm:.1f}",
+            "threshold_value": max_anchor_abs_ppm,
+            "pass": float(abs(ppm)) <= max_anchor_abs_ppm,
+            "description": "Anchor mass error (ppm)",
+        },
+        "local_matches": {
+            "value": int(local_matches_count),
+            "threshold": f">= {min_matched_peaks}",
+            "threshold_value": min_matched_peaks,
+            "pass": int(local_matches_count) >= min_matched_peaks,
+            "description": "Number of matched peaks",
+        },
+        "pc_missing_peaks": {
+            "value": float(pc_missing_peaks),
+            "threshold": f"<= {max_pc_missing_peaks:.1f}",
+            "threshold_value": max_pc_missing_peaks,
+            "pass": float(pc_missing_peaks) <= max_pc_missing_peaks,
+            "description": "Percentage of missing peaks",
+        },
+        "fit_score": {
+            "value": float(fit_score),
+            "threshold": f">= {min_fit_score:.6f}",
+            "threshold_value": min_fit_score,
+            "pass": float(fit_score) >= min_fit_score,
+            "description": "Envelope fit score",
+        },
+    }
+
+    if min_correlation is not None:
+        checks["correlation_coefficient"] = {
+            "value": float(correlation_coefficient),
+            "threshold": f">= {min_correlation:.6f}",
+            "threshold_value": min_correlation,
+            "pass": float(correlation_coefficient) >= min_correlation,
+            "description": "Intensity correlation coefficient",
+        }
+
+    legacy_accepted = all(check["pass"] for check in checks.values())
+
+    failed_at = None
+    for key, check in checks.items():
+        if not check["pass"]:
+            failed_at = key
+            break
+
+    return {
+        "legacy_accepted": legacy_accepted,
+        "failed_at": failed_at,
+        "checks": checks,
+        "quality_metrics": {
+            "fit_score": float(fit_score),
+            "correlation_coefficient": float(correlation_coefficient),
+            "pc_missing_peaks": float(pc_missing_peaks),
+            "local_matches_count": int(local_matches_count),
+        },
+    }
+
+
 def diagnose_candidate(
     residues: list[tuple[str, list[str]]],
     ion_type: str,
@@ -531,17 +763,21 @@ def diagnose_candidate(
 
         best = execute_hybrid_strategy(_score)
         # Fallback to empty result shape if both strategies failed.
-        return best if isinstance(best, dict) else {
-            "ion_type": ion_type,
-            "frag_len": int(frag_len),
-            "z": int(z),
-            "loss_formula": loss_formula,
-            "loss_count": int(loss_count),
-            "h_transfer": int(h_transfer),
-            "ok": False,
-            "reason": "no_result",
-            "diagnostic_steps": [],
-        }
+        return (
+            best
+            if isinstance(best, dict)
+            else {
+                "ion_type": ion_type,
+                "frag_len": int(frag_len),
+                "z": int(z),
+                "loss_formula": loss_formula,
+                "loss_count": int(loss_count),
+                "h_transfer": int(h_transfer),
+                "ok": False,
+                "reason": "no_result",
+                "diagnostic_steps": [],
+            }
+        )
 
     result = {
         "ion_type": ion_type,
@@ -555,9 +791,13 @@ def diagnose_candidate(
         "diagnostic_steps": [],
     }
 
-    def _scaled_dist_for_display(base_mz: np.ndarray, base_int: np.ndarray, target_mz: float) -> np.ndarray:
+    def _scaled_dist_for_display(
+        base_mz: np.ndarray, base_int: np.ndarray, target_mz: float
+    ) -> np.ndarray:
         """Scale theory intensities to local observed anchor intensity for display, even on failures."""
-        dist_disp = np.column_stack([np.asarray(base_mz, dtype=float), np.asarray(base_int, dtype=float)])
+        dist_disp = np.column_stack(
+            [np.asarray(base_mz, dtype=float), np.asarray(base_int, dtype=float)]
+        )
         if dist_disp.size == 0:
             return dist_disp
         max_theory = float(np.max(dist_disp[:, 1])) if dist_disp.size else 0.0
@@ -581,16 +821,48 @@ def diagnose_candidate(
         dist_disp[:, 1] *= float(anchor_int) / float(max_theory)
         return dist_disp
 
-    frag_name, base_frag_comp = ion_composition_from_sequence(residues, ion_type, frag_len, amidated=cfg.AMIDATED)
+    frag_name, base_frag_comp = ion_composition_from_sequence(
+        residues, ion_type, frag_len, amidated=cfg.AMIDATED
+    )
     cys_variants = get_disulfide_logic(ion_type, frag_len, len(residues))
     if not cys_variants:
         cys_variants = [("", None)]
 
     obs_max = float(np.max(spectrum_int)) if len(spectrum_int) else 0.0
     series = ion_series(ion_type)
-    allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_1H))
-    allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (series in set(cfg.H_TRANSFER_ION_TYPES_2H))
+    allow_1h = bool(cfg.ENABLE_H_TRANSFER) and (
+        series in set(cfg.H_TRANSFER_ION_TYPES_1H)
+    )
+    allow_2h = bool(cfg.ENABLE_H_TRANSFER) and (
+        series in set(cfg.H_TRANSFER_ION_TYPES_2H)
+    )
     result["strategy"] = "centroid" if bool(use_centroid_logic) else "raw"
+
+    fragments_scoring_settings = None
+    fragments_noise_model = None
+    fragments_pipeline_eval = None
+    try:
+        # Import lazily to avoid a module-import cycle with personalized_modes.
+        from personalized_modes import (
+            _build_noise_level_model,
+            _evaluate_fragment_pipeline,
+            _fragment_scoring_settings,
+        )
+
+        fragments_scoring_settings = _fragment_scoring_settings(
+            float(match_tol_ppm)
+        )
+        fragments_noise_model = _build_noise_level_model(
+            np.asarray(spectrum_mz, dtype=float),
+            np.asarray(spectrum_int, dtype=float),
+            num_splits=int(fragments_scoring_settings["noise_model_splits"]),
+            hist_bins=int(fragments_scoring_settings["noise_hist_bins"]),
+        )
+        fragments_pipeline_eval = _evaluate_fragment_pipeline
+    except Exception:
+        fragments_scoring_settings = None
+        fragments_noise_model = None
+        fragments_pipeline_eval = None
 
     variant_results: list[dict] = []
 
@@ -600,7 +872,7 @@ def diagnose_candidate(
         variant_result["variant_suffix"] = variant_suffix
         variant_result["variant_type"] = variant_type_from_suffix(variant_suffix)
 
-        if shift_comp:
+        if shift_comp is not None:
             try:
                 frag_comp = base_frag_comp + shift_comp
                 variant_name = frag_name + variant_suffix
@@ -622,13 +894,21 @@ def diagnose_candidate(
             frag_comp = base_frag_comp
             variant_result["frag_name"] = frag_name
             variant_result["diagnostic_steps"].append(
-                {"step": "1. Ion composition", "status": "pass", "details": f"Generated {frag_name}"}
+                {
+                    "step": "1. Ion composition",
+                    "status": "pass",
+                    "details": f"Generated {frag_name}",
+                }
             )
 
         try:
             loss_comp = apply_neutral_loss(frag_comp, loss_formula, loss_count)
             variant_result["diagnostic_steps"].append(
-                {"step": "2. Neutral loss", "status": "pass", "details": f"Applied {loss_count}x{loss_formula}"}
+                {
+                    "step": "2. Neutral loss",
+                    "status": "pass",
+                    "details": f"Applied {loss_count}x{loss_formula}",
+                }
             )
         except Exception as e:
             variant_result["reason"] = f"neutral_loss_failed: {e}"
@@ -637,12 +917,18 @@ def diagnose_candidate(
             )
             continue
 
-        variant_result["formula"] = composition_to_formula(loss_comp)
+        variant_result["formula"] = composition_to_formula(
+            loss_comp, proton_count=int(z)
+        )
 
         try:
             dist0 = theoretical_isodist_from_comp(loss_comp, z)
             variant_result["diagnostic_steps"].append(
-                {"step": "3. Theoretical spectrum", "status": "pass", "details": f"Generated {len(dist0)} peaks"}
+                {
+                    "step": "3. Theoretical spectrum",
+                    "status": "pass",
+                    "details": f"Generated {len(dist0)} peaks",
+                }
             )
         except Exception as e:
             variant_result["reason"] = f"theory_failed: {e}"
@@ -654,7 +940,11 @@ def diagnose_candidate(
         if dist0.size == 0:
             variant_result["reason"] = "theory_empty"
             variant_result["diagnostic_steps"].append(
-                {"step": "3. Theoretical spectrum", "status": "fail", "details": "Empty theoretical spectrum"}
+                {
+                    "step": "3. Theoretical spectrum",
+                    "status": "fail",
+                    "details": "Empty theoretical spectrum",
+                }
             )
             continue
 
@@ -677,7 +967,9 @@ def diagnose_candidate(
             }
         )
 
-        shift_1 = float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
+        shift_1 = (
+            float(cfg.H_TRANSFER_MASS) / float(z) if (allow_1h or allow_2h) else 0.0
+        )
         shift_2 = 2.0 * float(cfg.H_TRANSFER_MASS) / float(z) if allow_2h else 0.0
 
         dist_p1 = dist0.copy()
@@ -712,7 +1004,9 @@ def diagnose_candidate(
         if requested_dist is None:
             variant_result["reason"] = "requested_h_transfer_not_supported"
             variant_result["anchor_theory_mz"] = dist0_theory_mz
-            fallback_dist = _scaled_dist_for_display(dist0[:, 0], dist0[:, 1], dist0_theory_mz)
+            fallback_dist = _scaled_dist_for_display(
+                dist0[:, 0], dist0[:, 1], dist0_theory_mz
+            )
             variant_result["dist_plot"] = fallback_dist
             variant_result["theory_matches"] = match_theory_peaks(
                 spectrum_mz,
@@ -731,7 +1025,9 @@ def diagnose_candidate(
             variant_results.append(variant_result)
             continue
 
-        requested_anchor_theory_mz = float(requested_dist[get_anchor_idx(requested_dist), 0])
+        requested_anchor_theory_mz = float(
+            requested_dist[get_anchor_idx(requested_dist), 0]
+        )
         variant_result["expected_theory_mz"] = requested_anchor_theory_mz
 
         sample_keys, sample_mzs, scale = build_sample_axis(
@@ -756,7 +1052,11 @@ def diagnose_candidate(
                 tol_ppm=float(match_tol_ppm),
             )
             variant_result["diagnostic_steps"].append(
-                {"step": "4. H-transfer mode", "status": "fail", "details": "Empty sample axis"}
+                {
+                    "step": "4. H-transfer mode",
+                    "status": "fail",
+                    "details": "Empty sample axis",
+                }
             )
             variant_results.append(variant_result)
             continue
@@ -771,7 +1071,9 @@ def diagnose_candidate(
             peak_mz=peak_mz,
         )
 
-        y_requested = vectorize_dist(requested_dist, sample_keys, scale, mz_min=mz_min, mz_max=mz_max)
+        y_requested = vectorize_dist(
+            requested_dist, sample_keys, scale, mz_min=mz_min, mz_max=mz_max
+        )
         requested_score_union = css_similarity(y_obs, y_requested)
         requested_score = requested_score_union
 
@@ -791,7 +1093,9 @@ def diagnose_candidate(
                 match_tol_ppm=float(match_tol_ppm),
                 peak_mz=peak_mz,
             )
-            requested_score = css_similarity(y_obs_windowed, requested_dist_windowed[:, 1])
+            requested_score = css_similarity(
+                y_obs_windowed, requested_dist_windowed[:, 1]
+            )
 
         best_model = requested_model
         best_score = requested_score
@@ -806,7 +1110,11 @@ def diagnose_candidate(
             variant_result["reason"] = "theory_empty"
             variant_result["anchor_theory_mz"] = requested_anchor_theory_mz
             variant_result["diagnostic_steps"].append(
-                {"step": "4. H-transfer mode", "status": "fail", "details": "Empty theoretical prediction"}
+                {
+                    "step": "4. H-transfer mode",
+                    "status": "fail",
+                    "details": "Empty theoretical prediction",
+                }
             )
             variant_results.append(variant_result)
             continue
@@ -860,7 +1168,9 @@ def diagnose_candidate(
                 obs_int_c = float(spectrum_int[obs_idx_c])
             if not within_ppm(obs_mz_c, mz_candidate, float(match_tol_ppm)):
                 continue
-            if float(min_obs_rel_int) > 0 and obs_int_c < obs_max * float(min_obs_rel_int):
+            if float(min_obs_rel_int) > 0 and obs_int_c < obs_max * float(
+                min_obs_rel_int
+            ):
                 continue
             anchor_hits += 1
             if anchor_theory_mz is None:
@@ -871,16 +1181,22 @@ def diagnose_candidate(
 
         if str(getattr(cfg, "ANCHOR_MODE", "most_intense")).lower() == "monoisotopic":
             _nz = np.where(best_pred > 0)[0]
-            expected_theory_mz = float(sample_mzs[int(_nz[0])]) if len(_nz) > 0 else float(sample_mzs[0])
+            expected_theory_mz = (
+                float(sample_mzs[int(_nz[0])]) if len(_nz) > 0 else float(sample_mzs[0])
+            )
         else:
             expected_theory_mz = float(sample_mzs[int(np.argmax(best_pred))])
         variant_result["expected_theory_mz"] = expected_theory_mz
 
         if anchor_hits < int(cfg.ANCHOR_MIN_MATCHES) or anchor_theory_mz is None:
             variant_result["reason"] = "anchor_outside_ppm"
-            variant_result["anchor_theory_mz"] = expected_theory_mz  # Still provide theory m/z
+            variant_result["anchor_theory_mz"] = (
+                expected_theory_mz  # Still provide theory m/z
+            )
             # Build dist_plot for visualization even without anchor match
-            dist_plot = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), expected_theory_mz)
+            dist_plot = _scaled_dist_for_display(
+                sample_mzs.copy(), best_pred.copy(), expected_theory_mz
+            )
             variant_result["dist_plot"] = dist_plot
             variant_result["theory_matches"] = match_theory_peaks(
                 spectrum_mz,
@@ -899,7 +1215,9 @@ def diagnose_candidate(
             variant_results.append(variant_result)
             continue
 
-        ppm_offset = ((float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)) * 1e6
+        ppm_offset = (
+            (float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)
+        ) * 1e6
         obs_rel_int = float(obs_int / obs_max) if obs_max > 0 else 0.0
 
         variant_result["anchor_theory_mz"] = float(anchor_theory_mz)
@@ -919,16 +1237,25 @@ def diagnose_candidate(
             }
         )
         variant_result["diagnostic_steps"].append(
-            {"step": "6. PPM offset calculation", "status": "pass", "details": f"Calculated ppm offset: {ppm_offset:.2f}"}
+            {
+                "step": "6. PPM offset calculation",
+                "status": "pass",
+                "details": f"Calculated ppm offset: {ppm_offset:.2f}",
+            }
         )
 
-        dist_plot = np.column_stack([sample_mzs.copy(), best_pred.copy()])
+        dist_model = np.column_stack([sample_mzs.copy(), best_pred.copy()])
+        dist_plot = dist_model.copy()
         dist_plot[:, 0] += obs_mz - anchor_theory_mz
         max_plot = float(np.max(dist_plot[:, 1]))
         if max_plot <= 0.0:
             variant_result["reason"] = "theory_empty"
             variant_result["diagnostic_steps"].append(
-                {"step": "6. PPM offset calculation", "status": "fail", "details": "Empty calibrated spectrum"}
+                {
+                    "step": "6. PPM offset calculation",
+                    "status": "fail",
+                    "details": "Empty calibrated spectrum",
+                }
             )
             continue
         dist_plot[:, 1] *= obs_int / max_plot
@@ -936,10 +1263,14 @@ def diagnose_candidate(
         if mz_min is not None or mz_max is not None:
             mz_min_f = -np.inf if mz_min is None else float(mz_min)
             mz_max_f = np.inf if mz_max is None else float(mz_max)
-            dist_plot = dist_plot[(dist_plot[:, 0] >= mz_min_f) & (dist_plot[:, 0] <= mz_max_f)]
+            dist_plot = dist_plot[
+                (dist_plot[:, 0] >= mz_min_f) & (dist_plot[:, 0] <= mz_max_f)
+            ]
         if dist_plot.size == 0:
             variant_result["reason"] = "outside_mz_window"
-            fallback_dist = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), anchor_theory_mz)
+            fallback_dist = _scaled_dist_for_display(
+                sample_mzs.copy(), best_pred.copy(), anchor_theory_mz
+            )
             variant_result["dist_plot"] = fallback_dist
             variant_result["theory_matches"] = match_theory_peaks(
                 spectrum_mz,
@@ -963,7 +1294,9 @@ def diagnose_candidate(
         dist_plot = dist_plot[keep]
         if dist_plot.size == 0:
             variant_result["reason"] = "below_rel_intensity_cutoff"
-            fallback_dist = _scaled_dist_for_display(sample_mzs.copy(), best_pred.copy(), anchor_theory_mz)
+            fallback_dist = _scaled_dist_for_display(
+                sample_mzs.copy(), best_pred.copy(), anchor_theory_mz
+            )
             variant_result["dist_plot"] = fallback_dist
             variant_result["theory_matches"] = match_theory_peaks(
                 spectrum_mz,
@@ -976,7 +1309,7 @@ def diagnose_candidate(
                 {
                     "step": "6. PPM offset calculation",
                     "status": "fail",
-                    "details": f"No peaks above {rel_intensity_cutoff*100:.1f}% relative intensity",
+                    "details": f"No peaks above {rel_intensity_cutoff * 100:.1f}% relative intensity",
                 }
             )
             variant_results.append(variant_result)
@@ -998,16 +1331,34 @@ def diagnose_candidate(
             variant_result["isodec_css"] = float(isodec_css)
             variant_result["isodec_accepted"] = bool(accepted)
             variant_result["diagnostic_steps"].append(
-                {"step": "7. IsoDec rules", "status": "pass" if accepted else "fail", "details": f"CSS={isodec_css:.4f}"}
+                {
+                    "step": "7. IsoDec rules",
+                    "status": "pass" if accepted else "fail",
+                    "details": f"CSS={isodec_css:.4f}",
+                }
             )
 
-            if cfg.isodec_find_matches is not None and local_centroids.size and dist_plot.size:
+            if (
+                cfg.isodec_find_matches is not None
+                and local_centroids.size
+                and dist_plot.size
+            ):
                 matchedindexes, isomatches = cfg.isodec_find_matches(
                     local_centroids, dist_plot, float(isodec_config.matchtol)
                 )
-                mi = np.array(matchedindexes, dtype=int) if len(matchedindexes) else np.array([], dtype=int)
-                ii = np.array(isomatches, dtype=int) if len(isomatches) else np.array([], dtype=int)
-                matchedcentroids = local_centroids[mi] if mi.size else np.empty((0, 2), dtype=float)
+                mi = (
+                    np.array(matchedindexes, dtype=int)
+                    if len(matchedindexes)
+                    else np.array([], dtype=int)
+                )
+                ii = (
+                    np.array(isomatches, dtype=int)
+                    if len(isomatches)
+                    else np.array([], dtype=int)
+                )
+                matchedcentroids = (
+                    local_centroids[mi] if mi.size else np.empty((0, 2), dtype=float)
+                )
                 matchediso = dist_plot[ii] if ii.size else np.empty((0, 2), dtype=float)
 
                 minpeaks_eff = int(isodec_config.minpeaks)
@@ -1016,11 +1367,16 @@ def diagnose_candidate(
                         int1 = float(local_centroids[matchedindexes[0], 1])
                         int2 = float(local_centroids[matchedindexes[1], 1])
                         ratio = (int2 / int1) if int1 != 0 else 0.0
-                        if float(isodec_config.plusoneintwindowlb) < ratio < float(isodec_config.plusoneintwindowub):
+                        if (
+                            float(isodec_config.plusoneintwindowlb)
+                            < ratio
+                            < float(isodec_config.plusoneintwindowub)
+                        ):
                             minpeaks_eff = 2
 
                 areacovered = (
-                    float(np.sum(matchediso[:, 1])) / float(np.sum(local_centroids[:, 1]))
+                    float(np.sum(matchediso[:, 1]))
+                    / float(np.sum(local_centroids[:, 1]))
                     if local_centroids.size and np.sum(local_centroids[:, 1]) > 0
                     else 0.0
                 )
@@ -1043,16 +1399,28 @@ def diagnose_candidate(
 
             if not accepted:
                 # Diagnose-only high-confidence override for borderline strict-rule failures.
-                override_enabled = bool(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_ENABLE", False))
-                override_min_css = float(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_CSS", 0.95))
-                override_min_matched = int(getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_MATCHED_PEAKS", 2))
-                override_max_abs_ppm_cfg = getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MAX_ABS_PPM", None)
+                override_enabled = bool(
+                    getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_ENABLE", False)
+                )
+                override_min_css = float(
+                    getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_CSS", 0.95)
+                )
+                override_min_matched = int(
+                    getattr(cfg, "DIAGNOSE_ISODEC_OVERRIDE_MIN_MATCHED_PEAKS", 2)
+                )
+                override_max_abs_ppm_cfg = getattr(
+                    cfg, "DIAGNOSE_ISODEC_OVERRIDE_MAX_ABS_PPM", None
+                )
                 if override_max_abs_ppm_cfg is None:
                     override_max_abs_ppm = float(match_tol_ppm)
                 else:
                     override_max_abs_ppm = float(override_max_abs_ppm_cfg)
-                matched_n = int(variant_result.get("isodec_detail", {}).get("matched_peaks_n", 0))
-                anchor_ppm_abs = abs(float(variant_result.get("anchor_ppm", 0.0) or 0.0))
+                matched_n = int(
+                    variant_result.get("isodec_detail", {}).get("matched_peaks_n", 0)
+                )
+                anchor_ppm_abs = abs(
+                    float(variant_result.get("anchor_ppm", 0.0) or 0.0)
+                )
                 if (
                     override_enabled
                     and float(isodec_css) >= override_min_css
@@ -1080,6 +1448,52 @@ def diagnose_candidate(
                         theory_int=dist_plot[:, 1],
                         tol_ppm=float(match_tol_ppm),
                     )
+                    fragments_gate = {
+                        "legacy_accepted": False,
+                        "failed_at": "isodec_rules",
+                        "checks": {
+                            "isodec_css": {
+                                "value": float(
+                                    variant_result.get("isodec_css", best_score)
+                                ),
+                                "threshold": (
+                                    f">= {float(getattr(cfg, 'FRAG_MIN_ISODEC_CSS', cfg.MIN_COSINE)):.6f}"
+                                ),
+                                "threshold_value": float(
+                                    getattr(cfg, "FRAG_MIN_ISODEC_CSS", cfg.MIN_COSINE)
+                                ),
+                                "pass": float(
+                                    variant_result.get("isodec_css", best_score)
+                                )
+                                >= float(
+                                    getattr(cfg, "FRAG_MIN_ISODEC_CSS", cfg.MIN_COSINE)
+                                ),
+                                "description": "Cosine similarity score",
+                            },
+                            "isodec_rules": {
+                                "value": float(
+                                    variant_result.get("isodec_detail", {}).get(
+                                        "matched_peaks_n", 0
+                                    )
+                                ),
+                                "threshold": "strict IsoDec acceptance",
+                                "threshold_value": 1.0,
+                                "pass": False,
+                                "description": "IsoDec structural rules",
+                            },
+                        },
+                        "quality_metrics": {
+                            "fit_score": 0.0,
+                            "correlation_coefficient": 0.0,
+                            "pc_missing_peaks": 100.0,
+                            "local_matches_count": int(
+                                variant_result.get("isodec_detail", {}).get(
+                                    "matched_peaks_n", 0
+                                )
+                            ),
+                        },
+                    }
+                    variant_result["fragments_gate"] = fragments_gate
                     variant_results.append(variant_result)
                     continue
 
@@ -1090,7 +1504,9 @@ def diagnose_candidate(
                 obs_mz = float(spectrum_mz[obs_idx])
                 obs_int = float(spectrum_int[obs_idx])
                 obs_rel_int = float(obs_int / obs_max) if obs_max > 0 else 0.0
-                ppm_offset = ((float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)) * 1e6
+                ppm_offset = (
+                    (float(obs_mz) - float(anchor_theory_mz)) / float(anchor_theory_mz)
+                ) * 1e6
                 dist_plot[:, 0] += obs_mz - old_obs_mz
                 variant_result["anchor_obs_mz"] = float(obs_mz)
                 variant_result["anchor_ppm"] = float(ppm_offset)
@@ -1103,7 +1519,11 @@ def diagnose_candidate(
             variant_result["isodec_css"] = float(isodec_css)
             variant_result["isodec_accepted"] = False
             variant_result["diagnostic_steps"].append(
-                {"step": "7. IsoDec rules", "status": "info", "details": "IsoDec rules disabled"}
+                {
+                    "step": "7. IsoDec rules",
+                    "status": "info",
+                    "details": "IsoDec rules disabled",
+                }
             )
 
         variant_result["dist_plot"] = dist_plot
@@ -1115,26 +1535,131 @@ def diagnose_candidate(
             tol_ppm=float(match_tol_ppm),
         )
 
+        fragments_pipeline = None
+        pipeline_allowed = (
+            fragments_pipeline_eval is not None
+            and fragments_scoring_settings is not None
+            and obs_mz is not None
+            and anchor_theory_mz is not None
+            and (
+                bool(variant_result.get("isodec_accepted", False))
+                or not bool(cfg.ENABLE_ISODEC_RULES)
+                or isodec_config is None
+                or bool(fragments_scoring_settings.get("truth_score_enabled"))
+            )
+        )
+        if pipeline_allowed:
+            fragments_pipeline = fragments_pipeline_eval(
+                spectrum_mz=np.asarray(spectrum_mz, dtype=float),
+                spectrum_int=np.asarray(spectrum_int, dtype=float),
+                obs_max=float(obs_max),
+                match_tol_ppm=float(match_tol_ppm),
+                dist_model=np.asarray(dist_model, dtype=float),
+                dist_plot=np.asarray(dist_plot, dtype=float),
+                obs_mz=float(obs_mz),
+                obs_int=float(obs_int),
+                anchor_theory_mz=float(anchor_theory_mz),
+                ppm=float(variant_result.get("anchor_ppm", 0.0) or 0.0),
+                isodec_css=float(variant_result.get("isodec_css", best_score)),
+                isodec_detail=variant_result.get("isodec_detail") or {},
+                isodec_config=isodec_config,
+                use_centroid_logic=bool(use_centroid_logic),
+                noise_model=fragments_noise_model,
+                settings=fragments_scoring_settings,
+            )
+
+        if fragments_pipeline and fragments_pipeline.get("pipeline_ready"):
+            fragments_gate = fragments_pipeline["fragments_gate"]
+            variant_result["fragments_quality"] = fragments_pipeline.get("quality")
+            variant_result["fragments_components"] = fragments_pipeline.get("comp")
+        else:
+            fragments_gate = _calculate_fragments_gate(
+                isodec_css=float(variant_result.get("isodec_css", best_score)),
+                ppm=float(variant_result.get("anchor_ppm", 0.0) or 0.0),
+                theory_matches=variant_result["theory_matches"],
+                dist_plot=dist_plot,
+                spectrum_mz=spectrum_mz,
+                spectrum_int=spectrum_int,
+                local_centroids=None,
+                anchor_mz=float(obs_mz) if obs_mz is not None else 0.0,
+            )
+        variant_result["fragments_gate"] = fragments_gate
+
+        gate_details_lines = []
+        for check_name, check_info in fragments_gate["checks"].items():
+            status_icon = "✓" if check_info["pass"] else "✗"
+            gate_details_lines.append(
+                f"{status_icon} {check_info['description']}: "
+                f"{check_info['value']:.4f} {check_info['threshold']}"
+            )
+        gate_details = "; ".join(gate_details_lines)
+
+        if fragments_pipeline and fragments_pipeline.get("pipeline_ready"):
+            comp = fragments_pipeline.get("comp") or {}
+            quality = fragments_pipeline.get("quality") or {}
+            gate_details += (
+                f" | coverage={float(comp.get('coverage', 0.0)):.3f}"
+                f"; unexplained={float(quality.get('unexplained_fraction', 0.0)):.3f}"
+                f"; evidence={float(quality.get('evidence_score', 0.0)):.3f}"
+            )
+
+        corr_value = fragments_gate["checks"].get(
+            "correlation_coefficient", {}
+        ).get("value", 0.0)
+        corr_threshold = fragments_gate["checks"].get(
+            "correlation_coefficient", {}
+        ).get("threshold_value", 0.0)
+        if corr_threshold > 0 and abs(corr_value - corr_threshold) < 0.10:
+            gate_details += (
+                f" [Correlation {corr_value:.4f} is near threshold "
+                f"{corr_threshold:.4f}]"
+            )
+
+        variant_result["diagnostic_steps"].append(
+            {
+                "step": "8b. Fragments gate (shared fragments pipeline)",
+                "status": "pass" if fragments_gate["legacy_accepted"] else "fail",
+                "details": gate_details,
+            }
+        )
+
         final_score = float(variant_result.get("isodec_css", best_score))
         variant_result["final_cosine"] = final_score
         variant_result["diagnostic_steps"].append(
-            {"step": "8. Final CSS calculation", "status": "pass", "details": f"Final CSS score: {final_score:.4f}"}
+            {
+                "step": "8. Final CSS calculation",
+                "status": "pass",
+                "details": f"Final CSS score: {final_score:.4f}",
+            }
         )
 
         if final_score >= float(cfg.MIN_COSINE):
             variant_result["ok"] = True
             if variant_result.get("reason") in ("failed_isodec_rules", ""):
                 variant_result["reason"] = "ok"
-            if any(step.get("step") == "7b. Diagnose override" for step in variant_result.get("diagnostic_steps", [])):
+            if any(
+                step.get("step") == "7b. Diagnose override"
+                for step in variant_result.get("diagnostic_steps", [])
+            ):
                 variant_result["reason"] = "ok_diagnose_override"
             variant_result["diagnostic_steps"].append(
-                {"step": "9. Match acceptance", "status": "pass", "details": f"Match accepted with CSS score: {final_score:.4f}"}
+                {
+                    "step": "9. Match acceptance",
+                    "status": "pass",
+                    "details": f"Match accepted with CSS score: {final_score:.4f}",
+                }
             )
         else:
             variant_result["ok"] = False
-            variant_result["reason"] = f"cosine_below_threshold: {final_score:.4f} < {cfg.MIN_COSINE}"
+            variant_result["reason"] = (
+                f"cosine_below_threshold: {final_score:.4f} < {cfg.MIN_COSINE}"
+            )
             variant_result["diagnostic_steps"].append(
-                {"step": "9. Match acceptance", "status": "fail", "details": "Match rejected: CSS score below threshold"}
+                {
+                    "step": "9. Match acceptance",
+                    "status": "fail",
+                    "details": "Match rejected: CSS score below threshold",
+                }
             )
 
         variant_results.append(variant_result)
@@ -1142,12 +1667,18 @@ def diagnose_candidate(
     if not variant_results:
         result["reason"] = "all_disulfide_variants_failed"
         result["diagnostic_steps"].append(
-            {"step": "1. Ion composition", "status": "fail", "details": "All disulfide variants failed"}
+            {
+                "step": "1. Ion composition",
+                "status": "fail",
+                "details": "All disulfide variants failed",
+            }
         )
         return result
 
     pass_count = sum(1 for r in variant_results if r.get("ok"))
-    ranked_variants = sorted(variant_results, key=variant_rank_key_from_result, reverse=True)
+    ranked_variants = sorted(
+        variant_results, key=variant_rank_key_from_result, reverse=True
+    )
     best_result = ranked_variants[0]
     best_result["variant_pass_count"] = int(pass_count)
     # Preserve all evaluated disulfide variants so diagnose mode can display them in parallel.

@@ -19,7 +19,7 @@ import numpy as np
 
 import personalized_config as cfg
 from personalized import load_spectrum, preprocess_spectrum
-from personalized_match import composition_to_formula
+from personalized_match import composition_to_formula, match_theory_peaks
 from personalized_modes import run_charge_reduced_headless, run_diagnose_headless, run_fragments_headless, run_precursor_headless, run_raw_headless
 from personalized_sequence import (
     get_disulfide_logic,
@@ -229,7 +229,6 @@ def _build_full_theoretical_fragments(
                 for loss_suffix, loss_comp in loss_variants:
                     if loss_comp is None:
                         continue
-                    formula = composition_to_formula(loss_comp)
                     for z in range(z_min, z_max + 1):
                         try:
                             dist = theoretical_isodist_from_comp(loss_comp, z)
@@ -255,7 +254,9 @@ def _build_full_theoretical_fragments(
                                 "frag_len": int(frag_len),
                                 "fragment_index": _fragment_index(seq_len, ion_type, frag_len),
                                 "charge": int(z),
-                                "formula": formula,
+                                "formula": composition_to_formula(
+                                    loss_comp, proton_count=int(z)
+                                ),
                                 "variant_suffix": variant_suffix or "",
                                 "loss_suffix": loss_suffix or "",
                                 "anchor_theory_mz": anchor_mz,
@@ -322,6 +323,10 @@ class FragmentsRunRequest(BaseModel):
     amidated: Optional[bool] = None
     disulfide_bonds: Optional[int] = Field(None, ge=0)
     disulfide_map: Optional[str] = None
+    disulfide_variant_mode: Optional[str] = Field(
+        None,
+        description="Disulfide variant generation mode: 'algorithm' or 'manual_annotation'",
+    )
     enable_isodec_rules: Optional[bool] = None
     enable_h_transfer: Optional[bool] = None
     enable_neutral_losses: Optional[bool] = None
@@ -353,6 +358,10 @@ class DiagnoseRunRequest(BaseModel):
     amidated: Optional[bool] = None
     disulfide_bonds: Optional[int] = Field(None, ge=0)
     disulfide_map: Optional[str] = None
+    disulfide_variant_mode: Optional[str] = Field(
+        None,
+        description="Disulfide variant generation mode: 'algorithm' or 'manual_annotation'",
+    )
     enable_isodec_rules: Optional[bool] = None
     anchor_mode: Optional[str] = Field(None, description="Anchor alignment: 'most_intense' (default) or 'monoisotopic'")
 
@@ -388,6 +397,7 @@ def get_config() -> dict[str, Any]:
         "amidated": bool(cfg.AMIDATED),
         "disulfide_bonds": int(cfg.DISULFIDE_BONDS),
         "disulfide_map": _disulfide_map_to_string(cfg.DISULFIDE_MAP),
+        "disulfide_variant_mode": str(getattr(cfg, "DISULFIDE_VARIANT_MODE", "algorithm")),
         "enable_isodec_rules": bool(cfg.ENABLE_ISODEC_RULES),
         "enable_h_transfer": bool(cfg.ENABLE_H_TRANSFER),
         "enable_neutral_losses": bool(cfg.ENABLE_NEUTRAL_LOSSES),
@@ -489,6 +499,8 @@ def _build_overrides(req: FragmentsRunRequest, filepath: str, plot_mode: str = "
         overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
     if disulfide_map:
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.disulfide_variant_mode is not None:
+        overrides.append(_CfgOverride("DISULFIDE_VARIANT_MODE", str(req.disulfide_variant_mode)))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     if req.enable_neutral_losses is not None:
@@ -535,6 +547,8 @@ def _build_precursor_overrides(req: FragmentsRunRequest, filepath: str) -> list[
         overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
     if disulfide_map:
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.disulfide_variant_mode is not None:
+        overrides.append(_CfgOverride("DISULFIDE_VARIANT_MODE", str(req.disulfide_variant_mode)))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     _append_precursor_runtime_overrides(overrides, req, include_chain_to_fragments=False)
@@ -574,6 +588,8 @@ def _build_charge_reduced_overrides(req: FragmentsRunRequest, filepath: str) -> 
         overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
     if disulfide_map:
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.disulfide_variant_mode is not None:
+        overrides.append(_CfgOverride("DISULFIDE_VARIANT_MODE", str(req.disulfide_variant_mode)))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     _append_precursor_runtime_overrides(overrides, req, include_chain_to_fragments=True)
@@ -657,6 +673,29 @@ def _run_fragments_impl(
         frag_len = int(m.get("frag_len", 0) or 0)
         frag_index = _fragment_index(seq_len, ion_type_norm or "", frag_len)
         theory_mz_row, theory_int_row = _theory_from_dist(m.get("dist"))
+        theory_matches_raw = m.get("theory_matches") or []
+        if (not theory_matches_raw) and theory_mz_row:
+            theory_matches_raw = match_theory_peaks(
+                spectrum_mz,
+                spectrum_int,
+                np.asarray(theory_mz_row, dtype=float),
+                tol_ppm=float(cfg.MATCH_TOL_PPM),
+                theory_int=np.asarray(theory_int_row, dtype=float) if theory_int_row else None,
+            )
+        theory_matches: list[dict[str, Any]] = []
+        for p in theory_matches_raw:
+            theory_matches.append(
+                {
+                    "theory_mz": _safe_float(p.get("theory_mz")),
+                    "theory_int": _safe_float(p.get("theory_int")),
+                    "obs_mz": _safe_float(p.get("obs_mz")),
+                    "ppm": _safe_float(p.get("ppm")),
+                    "obs_int": _safe_float(p.get("obs_int")),
+                    "within": bool(p.get("within", False)),
+                    "obs_idx": int(p.get("obs_idx", 0) or 0) if p.get("obs_idx") is not None else None,
+                }
+            )
+        h_weights_raw = m.get("h_weights") if isinstance(m.get("h_weights"), dict) else {}
         fragments.append(
             {
                 "frag_id": m.get("frag_id", ""),
@@ -666,6 +705,7 @@ def _run_fragments_impl(
                 "frag_len": frag_len,
                 "fragment_index": frag_index,
                 "charge": int(m.get("charge", 0) or 0),
+                "formula": m.get("formula", ""),
                 "obs_mz": _safe_float(m.get("obs_mz")),
                 "obs_int": _safe_float(m.get("obs_int")),
                 "obs_rel_int": _safe_float(m.get("obs_rel_int")),
@@ -683,7 +723,9 @@ def _run_fragments_impl(
                 "coverage": _safe_float(m.get("coverage")),
                 "ppm_rmse": _safe_float(m.get("ppm_rmse")),
                 "match_count": int(m.get("match_count", 0) or 0),
+                "obs_idx": int(m.get("obs_idx", 0) or 0) if m.get("obs_idx") is not None else None,
                 "unexplained_fraction": _safe_float(m.get("unexplained_fraction")),
+                "local_explained_fraction": _safe_float(m.get("local_explained_fraction")),
                 "interference": _safe_float(m.get("interference")),
                 "core_coverage": _safe_float(m.get("core_coverage")),
                 "missing_core_fraction": _safe_float(m.get("missing_core_fraction")),
@@ -696,10 +738,22 @@ def _run_fragments_impl(
                 "noise_level": _safe_float(m.get("noise_level")),
                 "s2n": _safe_float(m.get("s2n")),
                 "log_s2n": _safe_float(m.get("log_s2n")),
+                "loss_suffix": m.get("loss_suffix", ""),
+                "variant_type": m.get("variant_type", ""),
                 "label": m.get("label", ""),
                 "variant_suffix": m.get("variant_suffix", ""),
+                "variant_pass_count": int(m.get("variant_pass_count", 0) or 0),
+                "neutral_score": _safe_float(m.get("neutral_score")),
+                "h_weights": {
+                    "0": _safe_float(h_weights_raw.get("0")),
+                    "+H": _safe_float(h_weights_raw.get("+H")),
+                    "+2H": _safe_float(h_weights_raw.get("+2H")),
+                    "-H": _safe_float(h_weights_raw.get("-H")),
+                    "-2H": _safe_float(h_weights_raw.get("-2H")),
+                },
                 "theory_mz": theory_mz_row,
                 "theory_intensity": theory_int_row,
+                "theory_matches": theory_matches,
             }
         )
 
@@ -1195,6 +1249,8 @@ def _build_diagnose_overrides(req: DiagnoseRunRequest, filepath: str) -> list[_C
         overrides.append(_CfgOverride("DISULFIDE_BONDS", int(req.disulfide_bonds)))
     if disulfide_map:
         overrides.append(_CfgOverride("DISULFIDE_MAP", disulfide_map))
+    if req.disulfide_variant_mode is not None:
+        overrides.append(_CfgOverride("DISULFIDE_VARIANT_MODE", str(req.disulfide_variant_mode)))
     if req.enable_isodec_rules is not None:
         overrides.append(_CfgOverride("ENABLE_ISODEC_RULES", bool(req.enable_isodec_rules)))
     if req.anchor_mode is not None:

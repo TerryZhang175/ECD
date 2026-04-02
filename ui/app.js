@@ -19,6 +19,7 @@ const copiesInput = document.getElementById('copies');
 const amidatedInput = document.getElementById('amidated');
 const disulfideBondsInput = document.getElementById('disulfideBonds');
 const disulfideMapInput = document.getElementById('disulfideMap');
+const disulfideVariantModeSelect = document.getElementById('disulfideVariantMode');
 const fragMinChargeInput = document.getElementById('fragMinCharge');
 const fragMaxChargeInput = document.getElementById('fragMaxCharge');
 const matchTolInput = document.getElementById('matchTol');
@@ -41,7 +42,6 @@ const coverageFile = document.getElementById('coverageFile');
 const coverageStatus = document.getElementById('coverageStatus');
 const coveragePopover = document.getElementById('coveragePopover');
 const spectrumResetButton = document.getElementById('spectrumResetButton');
-const spectrumZoomButton = document.getElementById('spectrumZoomButton');
 const cosineSlider = document.getElementById('minCosine');
 const cosineValue = document.getElementById('cosineValue');
 const diagnoseSpecInput = document.getElementById('diagnoseSpec');
@@ -61,9 +61,14 @@ const resultsMaxMissingPeaks = document.getElementById('resultsMaxMissingPeaks')
 const resultsMaxMassErrorStd = document.getElementById('resultsMaxMassErrorStd');
 const resultsMinCorrelation = document.getElementById('resultsMinCorrelation');
 const resultsQualityReset = document.getElementById('resultsQualityReset');
+const exportCsvSummaryButton = document.getElementById('exportCsvSummaryButton');
+const exportCsvPeaksButton = document.getElementById('exportCsvPeaksButton');
 const ionTypeChips = Array.from(document.querySelectorAll('.chip-group .chip'));
 const visualsStack = document.getElementById('visualsStack');
 const swapCoverageResultsButtons = Array.from(document.querySelectorAll('[data-swap-coverage-results]'));
+const isodecDetailPanel = document.getElementById('isodecDetailPanel');
+const isodecDetailContent = document.getElementById('isodecDetailContent');
+const isodecDetailClose = document.getElementById('isodecDetailClose');
 
 const sessionStart = Date.now();
 let runStart = null;
@@ -84,6 +89,9 @@ let activeResultRow = null;
 let lastPrecursorWindow = null;
 let lastSpectrumState = null;
 let lastSpectrumOptions = {};
+let lastRunRequest = null;
+let lastRunResponse = null;
+let lastRunMode = null;
 let swapHighlightTimer = null;
 
 const VISUAL_PANEL_ORDER_KEY = 'ecd.visual-panel-order.v1';
@@ -92,7 +100,10 @@ const refreshTableRows = () => {
   tableRows = Array.from(resultsTable.querySelectorAll('tbody tr'));
 };
 
-const API_BASE = 'http://127.0.0.1:8001';
+const API_BASE =
+  window.location && /^https?:/i.test(window.location.origin)
+    ? window.location.origin
+    : 'http://127.0.0.1:8001';
 
 const formatClock = (ms) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -107,6 +118,62 @@ const formatElapsed = (ms) => {
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
   const seconds = String(totalSeconds % 60).padStart(2, '0');
   return `${minutes}:${seconds}`;
+};
+
+const sanitizeFilenamePart = (value, fallback = 'result') => {
+  const base = String(value || '')
+    .trim()
+    .replace(/^.*[\\/]/, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return base || fallback;
+};
+
+const buildExportBaseName = () => {
+  const mode = sanitizeFilenamePart(lastRunMode || (modeSelect ? modeSelect.value : 'results'), 'results');
+  const source = sanitizeFilenamePart(lastRunRequest?.filepath || (filePath ? filePath.value : ''), 'spectrum');
+  const scan = Number.isFinite(Number(lastRunRequest?.scan)) ? `scan${Number(lastRunRequest.scan)}` : 'scan';
+  return `${mode}_${source}_${scan}`;
+};
+
+const csvValue = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (Number.isFinite(value)) return String(value);
+  if (typeof value === 'number') return '';
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+};
+
+const downloadCsv = (filename, headers, rows) => {
+  const headerRow = headers.join(',');
+  const dataRows = rows.map((row) => headers.map((header) => csvValue(row[header])).join(','));
+  const csvText = [headerRow, ...dataRows].join('\n');
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
+const neutralLossColumns = (lossSuffix) => {
+  const suffix = String(lossSuffix || '');
+  return {
+    H2O: suffix.includes('-H2O') && !suffix.includes('-2H2O') ? 1 : 0,
+    NH3: suffix.includes('-NH3') && !suffix.includes('-2NH3') ? 1 : 0,
+    CO: suffix.includes('-CO') && !suffix.includes('-CO2') ? 1 : 0,
+    CO2: suffix.includes('-CO2') ? 1 : 0,
+    '2H2O': suffix.includes('-2H2O') ? 1 : 0,
+    '2NH3': suffix.includes('-2NH3') ? 1 : 0,
+  };
 };
 
 const RESULTS_TABLE_CONFIG = {
@@ -618,6 +685,267 @@ const toNumberOrNull = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const FRAGMENTS_SUMMARY_HEADERS = [
+  'frag_id', 'ion_type', 'series', 'frag_len', 'charge', 'H2O', 'NH3', 'CO', 'CO2', '2H2O', '2NH3',
+  'variant_type', 'variant_suffix', 'variant_pass_count', '%H', '%2H', 'obs_idx', 'obs_mz', 'obs_int',
+  'obs_rel_int', 'anchor_theory_mz', 'anchor_ppm', 'selection_score', 'score', 'truth_score',
+  'truth_score_logit', 'truth_score_accepted', 'legacy_accepted', 'css', 'rawcos', 'cos0', 'coverage',
+  'ppm_rmse', 'match_count', 'local_explained_fraction', 'unexplained_fraction', 'interference',
+  'core_coverage', 'missing_core_fraction', 'num_missing_peaks', 'pc_missing_peaks', 'fit_score',
+  'correlation_coefficient', 'chisq_stat', 'mass_error_std', 'noise_level', 's2n', 'log_s2n', 'w0',
+  'w_plusH', 'w_plus2H', 'w_minusH', 'w_minus2H', 'label',
+];
+
+const FRAGMENTS_PEAKS_HEADERS = [
+  'frag_id', 'charge', 'H2O', 'NH3', 'CO', 'CO2', '2H2O', '2NH3', 'variant_type', 'variant_suffix',
+  'variant_pass_count', '%H', '%2H', 'score', 'css', 'rawcos', 'theory_mz', 'theory_int', 'obs_mz',
+  'ppm', 'obs_int', 'within', 'obs_idx',
+];
+
+const DIAGNOSE_SUMMARY_HEADERS = [
+  'spec', 'label', 'formula', 'mono_mass', 'avg_mass', 'ion_type', 'frag_name', 'frag_len', 'z',
+  'loss_formula', 'loss_count', 'h_transfer', 'variant_type', 'variant_suffix', 'variant_pass_count',
+  'ok', 'reason', 'raw_cosine_preanchor', 'anchor_theory_mz', 'anchor_obs_mz', 'anchor_ppm',
+  'anchor_within_ppm', 'obs_idx', 'obs_int', 'obs_rel_int', 'isodec_css', 'isodec_accepted',
+  'isodec_local_centroids_n', 'isodec_matched_peaks_n', 'isodec_minpeaks_effective',
+  'isodec_areacovered', 'isodec_topthree', 'match_tol_ppm', 'min_obs_rel_int', 'rel_intensity_cutoff',
+  'mz_min', 'mz_max',
+];
+
+const DIAGNOSE_PEAKS_HEADERS = [
+  'spec', 'label', 'formula', 'mono_mass', 'avg_mass', 'z', 'h_transfer', 'variant_type',
+  'variant_suffix', 'variant_pass_count', 'theory_mz', 'theory_int', 'obs_mz', 'ppm', 'obs_int',
+  'within', 'obs_idx',
+];
+
+const buildFragmentsSummaryExportRows = (data) => {
+  const fragments = Array.isArray(data?.fragments) ? data.fragments : [];
+  return fragments.map((frag) => {
+    const loss = neutralLossColumns(frag.loss_suffix);
+    const h = frag.h_weights && typeof frag.h_weights === 'object' ? frag.h_weights : {};
+    const pctH = 100 * ((toNumberOrNull(h['+H']) || 0) + (toNumberOrNull(h['-H']) || 0));
+    const pct2H = 100 * ((toNumberOrNull(h['+2H']) || 0) + (toNumberOrNull(h['-2H']) || 0));
+    return {
+      frag_id: frag.frag_id || '',
+      ion_type: frag.ion_type_raw || frag.ion_type || '',
+      series: frag.series || '',
+      frag_len: frag.frag_len ?? '',
+      charge: frag.charge ?? '',
+      H2O: loss.H2O,
+      NH3: loss.NH3,
+      CO: loss.CO,
+      CO2: loss.CO2,
+      '2H2O': loss['2H2O'],
+      '2NH3': loss['2NH3'],
+      variant_type: frag.variant_type || '',
+      variant_suffix: frag.variant_suffix || '',
+      variant_pass_count: frag.variant_pass_count ?? '',
+      '%H': pctH,
+      '%2H': pct2H,
+      obs_idx: frag.obs_idx ?? '',
+      obs_mz: frag.obs_mz ?? '',
+      obs_int: frag.obs_int ?? '',
+      obs_rel_int: frag.obs_rel_int ?? '',
+      anchor_theory_mz: frag.anchor_theory_mz ?? '',
+      anchor_ppm: frag.anchor_ppm ?? '',
+      selection_score: frag.selection_score ?? frag.score ?? '',
+      score: frag.evidence_score ?? frag.score ?? '',
+      truth_score: frag.truth_score ?? '',
+      truth_score_logit: frag.truth_score_logit ?? '',
+      truth_score_accepted: frag.truth_score_accepted ?? '',
+      legacy_accepted: frag.legacy_accepted ?? '',
+      css: frag.css ?? '',
+      rawcos: frag.rawcos ?? '',
+      cos0: frag.neutral_score ?? '',
+      coverage: frag.coverage ?? '',
+      ppm_rmse: frag.ppm_rmse ?? '',
+      match_count: frag.match_count ?? '',
+      local_explained_fraction: frag.local_explained_fraction ?? '',
+      unexplained_fraction: frag.unexplained_fraction ?? '',
+      interference: frag.interference ?? '',
+      core_coverage: frag.core_coverage ?? '',
+      missing_core_fraction: frag.missing_core_fraction ?? '',
+      num_missing_peaks: frag.num_missing_peaks ?? '',
+      pc_missing_peaks: frag.pc_missing_peaks ?? '',
+      fit_score: frag.fit_score ?? '',
+      correlation_coefficient: frag.correlation_coefficient ?? '',
+      chisq_stat: frag.chisq_stat ?? '',
+      mass_error_std: frag.mass_error_std ?? '',
+      noise_level: frag.noise_level ?? '',
+      s2n: frag.s2n ?? '',
+      log_s2n: frag.log_s2n ?? '',
+      w0: h['0'] ?? '',
+      w_plusH: h['+H'] ?? '',
+      w_plus2H: h['+2H'] ?? '',
+      w_minusH: h['-H'] ?? '',
+      w_minus2H: h['-2H'] ?? '',
+      label: frag.label || '',
+    };
+  });
+};
+
+const buildFragmentsPeaksExportRows = (data) => {
+  const fragments = Array.isArray(data?.fragments) ? data.fragments : [];
+  const rows = [];
+  fragments.forEach((frag) => {
+    const loss = neutralLossColumns(frag.loss_suffix);
+    const h = frag.h_weights && typeof frag.h_weights === 'object' ? frag.h_weights : {};
+    const pctH = 100 * ((toNumberOrNull(h['+H']) || 0) + (toNumberOrNull(h['-H']) || 0));
+    const pct2H = 100 * ((toNumberOrNull(h['+2H']) || 0) + (toNumberOrNull(h['-2H']) || 0));
+    const peaks = Array.isArray(frag.theory_matches) ? frag.theory_matches : [];
+    peaks.forEach((peak) => {
+      rows.push({
+        frag_id: frag.frag_id || '',
+        charge: frag.charge ?? '',
+        H2O: loss.H2O,
+        NH3: loss.NH3,
+        CO: loss.CO,
+        CO2: loss.CO2,
+        '2H2O': loss['2H2O'],
+        '2NH3': loss['2NH3'],
+        variant_type: frag.variant_type || '',
+        variant_suffix: frag.variant_suffix || '',
+        variant_pass_count: frag.variant_pass_count ?? '',
+        '%H': pctH,
+        '%2H': pct2H,
+        score: frag.evidence_score ?? frag.score ?? '',
+        css: frag.css ?? '',
+        rawcos: frag.rawcos ?? '',
+        theory_mz: peak.theory_mz ?? '',
+        theory_int: peak.theory_int ?? '',
+        obs_mz: peak.obs_mz ?? '',
+        ppm: peak.ppm ?? '',
+        obs_int: peak.obs_int ?? '',
+        within: peak.within ?? '',
+        obs_idx: peak.obs_idx ?? '',
+      });
+    });
+  });
+  return rows;
+};
+
+const buildDiagnoseSummaryExportRows = (data) => {
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results.map((result) => {
+    const detail = result.isodec_detail && typeof result.isodec_detail === 'object' ? result.isodec_detail : {};
+    return {
+      spec: data.ion_spec || '',
+      label: result.label || '',
+      formula: result.formula || '',
+      mono_mass: result.mono_mass ?? '',
+      avg_mass: result.avg_mass ?? '',
+      ion_type: result.ion_type || '',
+      frag_name: result.frag_name || '',
+      frag_len: result.frag_len ?? '',
+      z: result.z ?? result.charge ?? '',
+      loss_formula: result.loss_formula || '',
+      loss_count: result.loss_count ?? '',
+      h_transfer: result.h_transfer ?? data.h_transfer ?? '',
+      variant_type: result.variant_type || '',
+      variant_suffix: result.variant_suffix || '',
+      variant_pass_count: result.variant_pass_count ?? '',
+      ok: result.ok ?? '',
+      reason: result.reason || '',
+      raw_cosine_preanchor: result.raw_cosine_preanchor ?? '',
+      anchor_theory_mz: result.anchor_theory_mz ?? '',
+      anchor_obs_mz: result.anchor_obs_mz ?? '',
+      anchor_ppm: result.anchor_ppm ?? '',
+      anchor_within_ppm: result.anchor_within_ppm ?? '',
+      obs_idx: result.obs_idx ?? '',
+      obs_int: result.obs_int ?? '',
+      obs_rel_int: result.obs_rel_int ?? '',
+      isodec_css: result.isodec_css ?? '',
+      isodec_accepted: result.isodec_accepted ?? '',
+      isodec_local_centroids_n: detail.local_centroids_n ?? '',
+      isodec_matched_peaks_n: detail.matched_peaks_n ?? '',
+      isodec_minpeaks_effective: detail.minpeaks_effective ?? '',
+      isodec_areacovered: detail.areacovered ?? '',
+      isodec_topthree: detail.topthree ?? '',
+      match_tol_ppm: lastRunRequest?.match_tol_ppm ?? '',
+      min_obs_rel_int: '',
+      rel_intensity_cutoff: '',
+      mz_min: lastRunRequest?.mz_min ?? '',
+      mz_max: lastRunRequest?.mz_max ?? '',
+    };
+  });
+};
+
+const buildDiagnosePeaksExportRows = (data) => {
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const rows = [];
+  results.forEach((result) => {
+    const peaks = Array.isArray(result.theory_matches) && result.theory_matches.length
+      ? result.theory_matches
+      : (Array.isArray(result.theory_mz) && Array.isArray(result.theory_int)
+        ? result.theory_mz.map((theoryMz, index) => ({
+          theory_mz: theoryMz,
+          theory_int: result.theory_int[index],
+          obs_mz: '',
+          ppm: '',
+          obs_int: '',
+          within: '',
+          obs_idx: '',
+        }))
+        : []);
+    peaks.forEach((peak) => {
+      rows.push({
+        spec: data.ion_spec || '',
+        label: result.label || '',
+        formula: result.formula || '',
+        mono_mass: result.mono_mass ?? '',
+        avg_mass: result.avg_mass ?? '',
+        z: result.z ?? result.charge ?? '',
+        h_transfer: result.h_transfer ?? data.h_transfer ?? '',
+        variant_type: result.variant_type || '',
+        variant_suffix: result.variant_suffix || '',
+        variant_pass_count: result.variant_pass_count ?? '',
+        theory_mz: peak.theory_mz ?? '',
+        theory_int: peak.theory_int ?? '',
+        obs_mz: peak.obs_mz ?? '',
+        ppm: peak.ppm ?? '',
+        obs_int: peak.obs_int ?? '',
+        within: peak.within ?? '',
+        obs_idx: peak.obs_idx ?? '',
+      });
+    });
+  });
+  return rows;
+};
+
+const exportCurrentCsv = (kind) => {
+  if (!lastRunResponse || !lastRunMode) {
+    setWarnings(['Run analysis first, then export the current result CSV.']);
+    return;
+  }
+
+  let headers = [];
+  let rows = [];
+  if (lastRunMode === 'fragments' || lastRunMode === 'complex_fragments') {
+    headers = kind === 'summary' ? FRAGMENTS_SUMMARY_HEADERS : FRAGMENTS_PEAKS_HEADERS;
+    rows = kind === 'summary'
+      ? buildFragmentsSummaryExportRows(lastRunResponse)
+      : buildFragmentsPeaksExportRows(lastRunResponse);
+  } else if (lastRunMode === 'diagnose') {
+    headers = kind === 'summary' ? DIAGNOSE_SUMMARY_HEADERS : DIAGNOSE_PEAKS_HEADERS;
+    rows = kind === 'summary'
+      ? buildDiagnoseSummaryExportRows(lastRunResponse)
+      : buildDiagnosePeaksExportRows(lastRunResponse);
+  } else {
+    setWarnings(['CSV export is currently supported for fragments, complex_fragments, and diagnose modes.']);
+    return;
+  }
+
+  if (!rows.length) {
+    setWarnings([`No ${kind} rows available for export.`]);
+    return;
+  }
+
+  const filename = `${buildExportBaseName()}_${kind}.csv`;
+  downloadCsv(filename, headers, rows);
+  setWarnings([]);
+  setCoverageStatus(`Exported ${kind} CSV: ${filename}`);
+};
+
 const getIonTypesFromChips = () => {
   const alias = { 'z*': 'z-dot', 'c*': 'c-dot' };
   const selected = ionTypeChips
@@ -678,6 +1006,7 @@ const loadConfig = async () => {
     if (amidatedInput) amidatedInput.checked = Boolean(data.amidated);
     if (disulfideBondsInput && data.disulfide_bonds !== undefined) disulfideBondsInput.value = data.disulfide_bonds;
     if (disulfideMapInput) disulfideMapInput.value = data.disulfide_map || '';
+    if (disulfideVariantModeSelect) disulfideVariantModeSelect.value = data.disulfide_variant_mode || 'algorithm';
     if (fragMinChargeInput && data.frag_min_charge) fragMinChargeInput.value = data.frag_min_charge;
     if (fragMaxChargeInput && data.frag_max_charge) fragMaxChargeInput.value = data.frag_max_charge;
     if (matchTolInput && data.match_tol_ppm) matchTolInput.value = data.match_tol_ppm;
@@ -1141,6 +1470,94 @@ const applyRawResults = (data) => {
   setCoverageStatus('Raw spectrum');
 };
 
+const summarizeFragmentsGateStatus = (gate) => {
+  if (!gate) return 'Fragments n/a';
+  return gate.legacy_accepted
+    ? 'Fragments PASS'
+    : `Fragments FAIL (${gate.failed_at || 'unknown'})`;
+};
+
+const formatDiagnoseStatusTarget = (ionSpec, result) => {
+  const requested = String(ionSpec || '').trim();
+  const variant = String(result?.label || '').trim();
+  if (requested && variant && variant !== requested) {
+    return `Diagnose ${requested} [${variant}]`;
+  }
+  return `Diagnose ${variant || requested || 'ion'}`;
+};
+
+const formatDiagnoseWarningTarget = (ionSpec, result) => {
+  const variant = String(result?.label || '').trim();
+  const requested = String(ionSpec || '').trim();
+  return variant || requested || 'diagnose ion';
+};
+
+const updateIsoDecDetailPanel = (best) => {
+  if (!isodecDetailPanel || !isodecDetailContent) return;
+
+  const detail = best?.isodec_detail;
+  const gate = best?.fragments_gate;
+
+  if (!detail) {
+    isodecDetailPanel.hidden = true;
+    return;
+  }
+
+  isodecDetailPanel.hidden = false;
+
+  // Build detail rows
+  let html = '';
+
+  // Main IsoDec metrics
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">Matched peaks</span>
+    <span class="isodec-detail-value">${detail.matched_peaks_n ?? '-'}</span>
+  </div>`;
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">Min peaks required</span>
+    <span class="isodec-detail-value">${detail.minpeaks_effective ?? '-'}</span>
+  </div>`;
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">Area covered</span>
+    <span class="isodec-detail-value ${typeof detail.areacovered === 'number' && detail.areacovered >= 0.1 ? 'pass' : 'fail'}">
+      ${typeof detail.areacovered === 'number' ? (detail.areacovered * 100).toFixed(1) + '%' : '-'}
+    </span>
+  </div>`;
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">Top-3 match</span>
+    <span class="isodec-detail-value ${detail.topthree === true ? 'pass' : detail.topthree === false ? 'fail' : ''}">
+      ${detail.topthree === true ? '✓ Yes' : detail.topthree === false ? '✗ No' : '-'}
+    </span>
+  </div>`;
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">Local centroids</span>
+    <span class="isodec-detail-value">${detail.local_centroids_n ?? '-'}</span>
+  </div>`;
+  html += `<div class="isodec-detail-row">
+    <span class="isodec-detail-label">CSS threshold</span>
+    <span class="isodec-detail-value">${typeof detail.css_thresh === 'number' ? detail.css_thresh.toFixed(3) : '-'}</span>
+  </div>`;
+
+  // Fragments Gate section
+  if (gate) {
+    html += `<div class="isodec-detail-section">
+      <div class="isodec-detail-section-title">Fragments Gate Checks</div>`;
+
+    const checks = gate.checks || {};
+    for (const [key, check] of Object.entries(checks)) {
+      html += `<div class="isodec-detail-row">
+        <span class="isodec-detail-label">${check.description || key}</span>
+        <span class="isodec-detail-value ${check.pass ? 'pass' : 'fail'}">
+          ${typeof check.value === 'number' ? check.value.toFixed(3) : check.value} ${check.threshold || ''}
+        </span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  isodecDetailContent.innerHTML = html;
+};
+
 const applyDiagnoseResults = (data) => {
   const sequence = data.sequence;
   if (sequence && sequence !== peptideInput.value) {
@@ -1165,6 +1582,8 @@ const applyDiagnoseResults = (data) => {
     monoMass: r.mono_mass,
     rawCosine: r.raw_cosine,
     diagnosticSteps: r.diagnostic_steps || [],
+    fragmentsGate: r.fragments_gate || null,
+    isodecDetail: r.isodec_detail || null,
     theoryMz: Array.isArray(r.theory_mz) ? r.theory_mz : [],
     theoryIntensity: Array.isArray(r.theory_int) ? r.theory_int : [],
     overlayColor: r.ok ? '#22c55e' : '#ef4444',
@@ -1175,11 +1594,34 @@ const applyDiagnoseResults = (data) => {
 
   const best = data.best;
   const ionSpec = data.ion_spec || '';
+
+  // Update IsoDec Detail panel
+  updateIsoDecDetailPanel(best);
+
   if (best && best.ok) {
     const cssText = Number.isFinite(best.isodec_css) ? best.isodec_css.toFixed(3) : '--';
-    setCoverageStatus(`Diagnose ${ionSpec}: PASS (css=${cssText})`);
+    const gate = best.fragments_gate;
+    const diagnoseTarget = formatDiagnoseStatusTarget(ionSpec, best);
+    let statusText = `${diagnoseTarget}: PASS (css=${cssText})`;
+    if (gate) {
+      statusText = gate.legacy_accepted
+        ? `${statusText} | Fragments: PASS`
+        : `${diagnoseTarget}: Fragments FAIL (${gate.failed_at || 'unknown'}) | CSS=${cssText}`;
+    }
+    setCoverageStatus(statusText, gate ? !gate.legacy_accepted : false);
   } else if (best) {
-    setCoverageStatus(`Diagnose ${ionSpec}: FAIL - ${best.reason || 'Unknown'}`, true);
+    const gate = best.fragments_gate;
+    const diagnoseTarget = formatDiagnoseStatusTarget(ionSpec, best);
+    let statusText = `${diagnoseTarget}: FAIL - ${best.reason || 'Unknown'}`;
+    if (gate && !gate.legacy_accepted) {
+      statusText = `${diagnoseTarget}: Fragments FAIL (${gate.failed_at || 'unknown'})`;
+      if (best.reason) {
+        statusText += ` | Diagnose: ${best.reason}`;
+      }
+    } else if (gate) {
+      statusText += ' | Fragments: PASS';
+    }
+    setCoverageStatus(statusText, true);
   } else {
     setCoverageStatus(`Diagnose ${ionSpec}: No results`, true);
   }
@@ -1222,6 +1664,9 @@ const startRun = async () => {
   isRunning = true;
   runStart = Date.now();
   progress = 0;
+  lastRunRequest = null;
+  lastRunResponse = null;
+  lastRunMode = null;
   progressBar.style.width = '0%';
   statusPill.textContent = 'Running';
   statusPill.classList.remove('status-idle');
@@ -1285,6 +1730,7 @@ const startRun = async () => {
         amidated: amidatedInput ? amidatedInput.checked : null,
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
         disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
+        disulfide_variant_mode: disulfideVariantModeSelect ? disulfideVariantModeSelect.value : 'algorithm',
         enable_isodec_rules: isoDecInput ? isoDecInput.checked : null,
         anchor_mode: anchorModeSelect ? anchorModeSelect.value : null,
       };
@@ -1319,6 +1765,7 @@ const startRun = async () => {
         amidated: amidatedInput ? amidatedInput.checked : null,
         disulfide_bonds: disulfideBondsInput ? Number(disulfideBondsInput.value) : null,
         disulfide_map: disulfideMapInput ? disulfideMapInput.value : '',
+        disulfide_variant_mode: disulfideVariantModeSelect ? disulfideVariantModeSelect.value : 'algorithm',
         anchor_mode: anchorModeSelect ? anchorModeSelect.value : null,
       };
     }
@@ -1375,6 +1822,9 @@ const startRun = async () => {
     }
 
     const data = await response.json();
+    lastRunRequest = { ...payload };
+    lastRunResponse = data;
+    lastRunMode = data.mode || mode;
     const isPrecursorMode = isPrecursor || data.mode === 'precursor';
     const isChargeReducedMode = isChargeReduced || data.mode === 'charge_reduced';
     const isComplexFragmentsMode = isComplexFragments || data.mode === 'complex_fragments';
@@ -1447,10 +1897,22 @@ const startRun = async () => {
         mode: 'diagnose',
       });
       const best = data.best;
+      const gate = best ? best.fragments_gate : null;
       if (best && best.ok) {
-        setWarnings([]);
+        if (gate && !gate.legacy_accepted) {
+          setWarnings([`Fragments pipeline rejected ${formatDiagnoseWarningTarget(data.ion_spec, best)}: ${gate.failed_at || 'unknown'}`]);
+        } else {
+          setWarnings([]);
+        }
       } else if (best) {
-        setWarnings([`Diagnose: ${best.reason || 'Not matched'}`]);
+        const warnings = [];
+        if (gate && !gate.legacy_accepted) {
+          warnings.push(`Fragments pipeline rejected ${formatDiagnoseWarningTarget(data.ion_spec, best)}: ${gate.failed_at || 'unknown'}`);
+        }
+        if (best.reason) {
+          warnings.push(`Diagnose: ${best.reason}`);
+        }
+        setWarnings(warnings.length ? warnings : ['Diagnose: Not matched']);
       } else {
         setWarnings(['No diagnose results found.']);
       }
@@ -1652,6 +2114,12 @@ resultsSort.addEventListener('change', () => {
 
 runButton.addEventListener('click', startRun);
 stopButton.addEventListener('click', stopRun);
+if (exportCsvSummaryButton) {
+  exportCsvSummaryButton.addEventListener('click', () => exportCurrentCsv('summary'));
+}
+if (exportCsvPeaksButton) {
+  exportCsvPeaksButton.addEventListener('click', () => exportCurrentCsv('peaks'));
+}
 
 stopButton.disabled = true;
 updateSession();
@@ -1826,23 +2294,6 @@ if (spectrumResetButton) {
       'xaxis.autorange': true,
       'yaxis.autorange': true,
     });
-  });
-}
-
-if (spectrumZoomButton) {
-  spectrumZoomButton.addEventListener('click', () => {
-    const min = mzMinInput ? toNumberOrNull(mzMinInput.value) : null;
-    const max = mzMaxInput ? toNumberOrNull(mzMaxInput.value) : null;
-    if (min != null && max != null && min < max) {
-      zoomSpectrumToRange(min, max);
-    } else if (modeSelect && modeSelect.value === 'precursor' && lastPrecursorWindow) {
-      zoomSpectrumToRange(lastPrecursorWindow[0], lastPrecursorWindow[1]);
-    } else {
-      Plotly.relayout('spectrumPlot', {
-        'xaxis.autorange': true,
-        'yaxis.autorange': true,
-      });
-    }
   });
 }
 
@@ -2035,6 +2486,7 @@ const buildCoverageGroups = (length) => {
       fragLen,
       theoryMz: row.theoryMz,
       theoryIntensity: row.theoryIntensity,
+      fragmentsGate: row.fragmentsGate || null,
     });
   });
 
@@ -2061,20 +2513,53 @@ const buildPopoverHtml = (group) => {
         const centerMz = getMatchCenterMz(match);
         const mzText = formatMz(centerMz);
         const cssText = formatCss(match.css);
+        const matchLabel = match.label || `${group.ionType}${group.fragLen}${formatCharge(match.charge)}`;
+        const gateText = summarizeFragmentsGateStatus(match.fragmentsGate);
         return `<button type="button" class="popover-item" data-key="${keyAttr}" data-match-index="${idx}"><span>#${idx + 1} ${escapeHtml(
-          formatCharge(match.charge)
-        )}</span><span>css ${escapeHtml(cssText)} | m/z ${escapeHtml(mzText)}</span></button>`;
+          matchLabel
+        )}</span><span>${escapeHtml(gateText)} | css ${escapeHtml(cssText)} | m/z ${escapeHtml(mzText)}</span></button>`;
       }
     )
     .join('');
   const best = group.matches[0];
   const bestLine = `Best css ${formatCss(best.css)} | intensity ${formatIntensity(best.obsInt)}`;
   const hint = 'Click a match to zoom spectrum';
+
+  let gateHtml = '';
+  if (best.fragmentsGate) {
+    const gate = best.fragmentsGate;
+    const gateStatus = gate.legacy_accepted ? '<span style="color:#22c55e">PASS</span>' : `<span style="color:#ef4444">FAIL (${gate.failed_at || '?'})</span>`;
+    const checks = gate.checks || {};
+    const checkRows = Object.entries(checks).map(([key, check]) => {
+      const statusIcon = check.pass ? '✓' : '✗';
+      const statusColor = check.pass ? '#22c55e' : '#ef4444';
+      const valueStr = typeof check.value === 'number' ? check.value.toFixed(3) : String(check.value);
+      return `<div style="color:${statusColor};font-size:11px;margin:1px 0">${statusIcon} ${escapeHtml(key)}: ${escapeHtml(valueStr)} ${escapeHtml(check.threshold)}</div>`;
+    }).join('');
+    const gateLabel = best.label || `${group.ionType}${group.fragLen}${formatCharge(best.charge)}`;
+    gateHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:600;margin-bottom:3px">Fragments Gate for ${escapeHtml(gateLabel)}: ${gateStatus}</div>${checkRows}</div>`;
+  }
+
+  // Add IsoDec detail section if available
+  let isodecDetailHtml = '';
+  if (best.isodecDetail) {
+    const detail = best.isodecDetail;
+    const detailRows = [
+      { key: 'Matched peaks', value: detail.matched_peaks_n ?? '-' },
+      { key: 'Min peaks required', value: detail.minpeaks_effective ?? '-' },
+      { key: 'Area covered', value: typeof detail.areacovered === 'number' ? (detail.areacovered * 100).toFixed(1) + '%' : '-' },
+      { key: 'Top-3 match', value: detail.topthree === true ? '✓' : detail.topthree === false ? '✗' : '-' },
+      { key: 'Local centroids', value: detail.local_centroids_n ?? '-' },
+      { key: 'CSS threshold', value: typeof detail.css_thresh === 'number' ? detail.css_thresh.toFixed(3) : '-' },
+    ].map(({ key, value }) => `<div style="font-size:11px;margin:1px 0;color:#64748b">${escapeHtml(key)}: ${escapeHtml(String(value))}</div>`).join('');
+    isodecDetailHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:600;margin-bottom:3px;color:#8b5cf6">IsoDec Detail</div>${detailRows}</div>`;
+  }
+
   return `<div class="popover-title">${escapeHtml(title)}</div><div class="popover-subtitle">${escapeHtml(
     subtitle
   )}</div><div class="popover-subtitle">${escapeHtml(bestLine)}</div><div class="popover-subtitle">${escapeHtml(
     hint
-  )}</div><div class="popover-list">${rows}</div>`;
+  )}</div><div class="popover-list">${rows}</div>${gateHtml}${isodecDetailHtml}`;
 };
 
 const clearCoveragePopoverTimer = () => {
@@ -2511,6 +2996,14 @@ if (coverageLoadButton && coverageFile) {
     const [file] = coverageFile.files || [];
     if (file) {
       handleCoverageFile(file);
+    }
+  });
+}
+
+if (isodecDetailClose) {
+  isodecDetailClose.addEventListener('click', () => {
+    if (isodecDetailPanel) {
+      isodecDetailPanel.hidden = true;
     }
   });
 }

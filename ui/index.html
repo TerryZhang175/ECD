@@ -5,9 +5,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ECD Analyzer UI</title>
-  <link rel="stylesheet" href="styles.css?v=20260314-1" />
+  <link rel="stylesheet" href="styles.css?v=20260402-2" />
   <script defer src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-  <script defer src="app.js?v=20260314-1"></script>
+  <script defer src="app.js?v=20260402-2"></script>
 </head>
 
 <body>
@@ -65,6 +65,16 @@
             </div>
             <div class="warning-list" id="warningList">
               <div class="warning-item">Load a data file to begin.</div>
+            </div>
+            <!-- IsoDec Detail Panel (hidden by default, shown in diagnose mode) -->
+            <div class="isodec-detail-panel" id="isodecDetailPanel" hidden>
+              <div class="isodec-detail-header">
+                <span class="isodec-detail-title">IsoDec Detail</span>
+                <button class="button ghost isodec-detail-close" id="isodecDetailClose" type="button" title="Hide">×</button>
+              </div>
+              <div class="isodec-detail-content" id="isodecDetailContent">
+                <div class="isodec-detail-empty">Run Diagnose mode to see details</div>
+              </div>
             </div>
           </div>
         </section>
@@ -158,6 +168,14 @@
                 <label for="disulfideMap">Disulfide map</label>
                 <input id="disulfideMap" type="text" placeholder="1-4, 2-5" />
               </div>
+            </div>
+            <div class="field">
+              <label for="disulfideVariantMode">Disulfide variant mode</label>
+              <select id="disulfideVariantMode">
+                <option value="algorithm" selected>Algorithm</option>
+                <option value="manual_annotation">Manual annotation</option>
+              </select>
+              <div class="helper">Use manual annotation to keep only the truth-style disulfide formulas.</div>
             </div>
             <div class="field">
               <label>Ion types</label>
@@ -326,8 +344,8 @@
           </div>
           <div class="panel-body">
             <div class="button-row">
-              <button class="button ghost" type="button">CSV Summary</button>
-              <button class="button ghost" type="button">CSV Peaks</button>
+              <button class="button ghost" id="exportCsvSummaryButton" type="button">CSV Summary</button>
+              <button class="button ghost" id="exportCsvPeaksButton" type="button">CSV Peaks</button>
             </div>
             <div class="button-row">
               <button class="button ghost" type="button">Export PNG</button>
@@ -381,7 +399,6 @@
             </div>
             <div class="panel-actions">
               <button class="button ghost" id="spectrumResetButton" type="button">Reset view</button>
-              <button class="button ghost" id="spectrumZoomButton" type="button">Zoom precursor</button>
               <div class="zoom-width-group">
                 <button class="button ghost zoom-step-btn" id="zoomInBtn" type="button" title="Zoom in (narrower window)">+</button>
                 <button class="button ghost zoom-step-btn" id="zoomOutBtn" type="button" title="Zoom out (wider window)">−</button>
