@@ -1555,6 +1555,69 @@ const updateIsoDecDetailPanel = (best) => {
     html += `</div>`;
   }
 
+  // Outlier Detection section
+  const qualityMetrics = gate?.quality_metrics || best?.fragments_gate?.quality_metrics || {};
+  const outlierFeatures = qualityMetrics.outlier_features;
+  const outlierDetail = qualityMetrics.outlier_detail || [];
+
+  if (outlierFeatures) {
+    html += `<div class="isodec-detail-section">
+      <div class="isodec-detail-section-title">Outlier Detection</div>`;
+
+    // Summary metrics
+    const patternNames = ['None', 'Low mass', 'High mass', 'Spread', 'Clustered'];
+    const patternName = patternNames[outlierFeatures.pattern] || 'Unknown';
+
+    html += `<div class="isodec-detail-row">
+      <span class="isodec-detail-label">Max ratio</span>
+      <span class="isodec-detail-value ${outlierFeatures.outlier_max_ratio > 1.5 ? 'fail' : ''}">
+        ${outlierFeatures.outlier_max_ratio?.toFixed(2) || '-'}
+      </span>
+    </div>`;
+    html += `<div class="isodec-detail-row">
+      <span class="isodec-detail-label">Outlier count</span>
+      <span class="isodec-detail-value">
+        ${outlierFeatures.outlier_count ?? '-'} / ${outlierDetail.length}
+      </span>
+    </div>`;
+    html += `<div class="isodec-detail-row">
+      <span class="isodec-detail-label">Outlier %</span>
+      <span class="isodec-detail-value">
+        ${outlierFeatures.outlier_pct !== undefined ? (outlierFeatures.outlier_pct * 100).toFixed(1) + '%' : '-'}
+      </span>
+    </div>`;
+    html += `<div class="isodec-detail-row">
+      <span class="isodec-detail-label">Pattern</span>
+      <span class="isodec-detail-value">
+        ${patternName}
+      </span>
+    </div>`;
+
+    // Per-peak ratios detail
+    if (outlierDetail.length > 0) {
+      html += `<div class="isodec-detail-subsection">
+        <div class="isodec-detail-row isodec-detail-header">
+          <span class="isodec-detail-label">Peak</span>
+          <span class="isodec-detail-label">Obs</span>
+          <span class="isodec-detail-label">Exp</span>
+          <span class="isodec-detail-label">Ratio</span>
+        </div>`;
+      for (const peak of outlierDetail) {
+        const ratio = peak.ratio || 0;
+        const isOutlier = peak.is_outlier === true;
+        html += `<div class="isodec-detail-row">
+          <span class="isodec-detail-value">${peak.pos || '-'}</span>
+          <span class="isodec-detail-value">${peak.obs?.toFixed(1) || '-'}</span>
+          <span class="isodec-detail-value">${peak.exp?.toFixed(1) || '-'}</span>
+          <span class="isodec-detail-value ${isOutlier ? 'fail' : ''}">${ratio.toFixed(2)}</span>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
   isodecDetailContent.innerHTML = html;
 };
 

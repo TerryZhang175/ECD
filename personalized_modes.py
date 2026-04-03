@@ -389,6 +389,105 @@ def _safe_pearson(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
     return float(np.clip(corr, -1.0, 1.0))
 
 
+def _classify_outlier_pattern(is_outlier: np.ndarray, ratios: np.ndarray) -> int:
+    """
+    Classify outlier distribution pattern.
+
+    Returns:
+        0 = none (no outliers)
+        1 = low_mass (outliers in first half)
+        2 = high_mass (outliers in second half)
+        3 = spread (outliers distributed)
+        4 = clustered (consecutive outliers)
+    """
+    if not np.any(is_outlier):
+        return 0  # none
+
+    outlier_indices = np.where(is_outlier)[0]
+    n = len(is_outlier)
+
+    # All in low mass region (first half)
+    if np.all(outlier_indices < n / 2):
+        return 1  # low_mass
+
+    # All in high mass region (second half)
+    if np.all(outlier_indices >= n / 2):
+        return 2  # high_mass
+
+    # Check if clustered (consecutive or near-consecutive)
+    if len(outlier_indices) >= 2:
+        gaps = np.diff(outlier_indices)
+        if np.all(gaps <= 2):
+            return 4  # clustered
+
+    # Otherwise spread out
+    return 3  # spread
+
+
+def _detect_outlier_peaks(
+    obs_int: np.ndarray,
+    theory_int: np.ndarray,
+    outlier_threshold: float = 1.5,
+    max_peaks: int = 7,
+) -> tuple[dict, list]:
+    """
+    Detect outlier peaks in isotope pattern.
+
+    Args:
+        obs_int: Observed intensities (aligned to theory)
+        theory_int: Theoretical intensities (scaled)
+        outlier_threshold: Ratio threshold for outlier detection
+        max_peaks: Maximum number of isotope peaks to track (M+0 to M+6)
+
+    Returns:
+        outlier_features: dict with ML-friendly features
+        outlier_detail: list of per-peak details
+    """
+    obs = np.asarray(obs_int, dtype=float)
+    theory = np.asarray(theory_int, dtype=float)
+
+    n_peaks = min(len(obs), max_peaks)
+
+    # Calculate ratios (fixed size array for ML)
+    ratios = np.zeros(max_peaks, dtype=float)
+    for i in range(n_peaks):
+        if theory[i] > 0:
+            ratios[i] = obs[i] / theory[i]
+        else:
+            ratios[i] = 0.0
+
+    # Identify outliers
+    is_outlier = ratios > outlier_threshold
+    outlier_count = int(np.sum(is_outlier[:n_peaks]))
+    outlier_pct = outlier_count / n_peaks if n_peaks > 0 else 0.0
+    max_ratio = float(np.max(ratios[:n_peaks])) if n_peaks > 0 else 1.0
+
+    # Classify pattern
+    pattern = _classify_outlier_pattern(is_outlier[:n_peaks], ratios[:n_peaks])
+
+    # Build feature dict (ML-friendly)
+    outlier_features = {
+        "outlier_max_ratio": max_ratio,
+        "outlier_count": outlier_count,
+        "outlier_pct": outlier_pct,
+        "ratios": ratios.tolist(),  # Fixed length 7
+        "pattern": pattern,
+    }
+
+    # Build detail list (for debugging/analysis)
+    outlier_detail = []
+    for i in range(n_peaks):
+        outlier_detail.append({
+            "pos": f"M+{i}",
+            "obs": float(obs[i]) if i < len(obs) else 0.0,
+            "exp": float(theory[i]) if i < len(theory) else 0.0,
+            "ratio": float(ratios[i]),
+            "is_outlier": bool(is_outlier[i]),
+        })
+
+    return outlier_features, outlier_detail
+
+
 def _chisq_statistic(obs_int: np.ndarray, theory_int: np.ndarray) -> float:
     obs = np.asarray(obs_int, dtype=float)
     theory = np.asarray(theory_int, dtype=float)
@@ -1922,6 +2021,14 @@ def _fragment_gate_from_pipeline(
             "correlation_coefficient": float(quality["correlation_coefficient"]),
             "pc_missing_peaks": float(quality["pc_missing_peaks"]),
             "local_matches_count": int(local_match_count),
+            "outlier_features": quality.get("outlier_features", {
+                "outlier_max_ratio": 1.0,
+                "outlier_count": 0,
+                "outlier_pct": 0.0,
+                "ratios": [0.0] * 7,
+                "pattern": 0,
+            }),
+            "outlier_detail": quality.get("outlier_detail", []),
         },
     }
 
